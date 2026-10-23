@@ -384,7 +384,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "2";
+const APP_VERSION = "3";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -744,7 +744,9 @@ const API = DEMO ? DemoAPI : LiveAPI;
 const S = { phase: "boot", error: "", me: null, items: [], names: [], view: "home", arg: null, stack: [],
             cal: { month: null, sel: null }, confirm: null, busy: new Set(), absenceDone: false, demoPhotos: {} };
 
-const isProfile = i => i.category === CONFIG.profileCategory || i.category === "🎂 Birthday";
+// Profiles are the Roster rows: Service Category and Service Date both blank (the list's Roster view).
+// Rows with Service Category = "Birthday" (or "🎂 Birthday") also count, like Productions.
+const isProfile = i => i.category === CONFIG.profileCategory || i.category === "🎂 Birthday" || (!i.category && !i.date && !!i.fullName);
 const mine = i => (i.email && S.me.emails.includes(i.email)) || (!i.email && i.fullName && lc(i.fullName) === lc(S.me.name));
 const myProfile = () => S.items.find(i => isProfile(i) && mine(i));
 const profileOf = i => S.items.find(p => isProfile(p) && ((i.email && p.email === i.email) || (p.fullName && p.fullName === i.fullName)));
@@ -1128,15 +1130,16 @@ function viewMember(){
     <section class="panel"><dl class="kv">
       <dt>First Name</dt><dd>${esc(p.first || "—")}</dd>
       <dt>Birthday</dt><dd>${esc(bd)}</dd>
+      ${p.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ""))}" style="color:var(--accent);font-weight:600">${esc(p.phone)}</a></dd>` : ""}
     </dl></section>
     <section><h2 class="section-label">Places I Serve</h2>
-      ${p.serving.length ? `<ul class="panel rows">${p.serving.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">No serving areas listed yet.</div>`}</section>
+      ${(p.positions || []).length ? `<ul class="panel rows">${p.positions.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">No serving areas listed yet.</div>`}</section>
     ${wallSection(p)}
     ${next.length ? `<section><h2 class="section-label">Serving Next</h2><div class="list">${next.map(i=>`<div class="panel" style="padding:10px 14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(i.role)}</b><span class="sub" style="margin:0">${esc(fmtShort(i.date))}</span></div>`).join("")}</div></section>` : ""}`;
 }
 
 function noProfileMsg(){
-  return `<div class="empty">We couldn't find your profile row in the Serving Schedule list. Ask the schedule admin to add a “${esc(CONFIG.profileCategory)}” row with your name and email.</div>`;
+  return `<div class="empty">We couldn't find you on the team Roster. Ask the schedule admin to add a Roster row (Service Category and Service Date blank) with your Full Name and your email in Name Email.</div>`;
 }
 
 function absState(){
