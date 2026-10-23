@@ -305,6 +305,14 @@ form.stack{display:flex;flex-direction:column;gap:14px}
 .doc-pin svg{width:15px;height:15px}
 .doc-new{display:flex;flex-wrap:wrap;gap:8px}
 .doc-tip{font-size:13.5px;line-height:1.45}
+.doc-view-h{display:flex;flex-direction:column;gap:2px;margin-top:-6px}
+.doc-view-h h1{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:.02em;margin:0;text-wrap:balance}
+.doc-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.doc-actions .confirm-row{width:100%}
+.doc-del{color:var(--bad);border-color:var(--bad)}
+.doc-frame{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;height:calc(100dvh - 300px);min-height:360px}
+.doc-frame .empty{background:var(--surface);height:100%;display:grid;place-items:center;border:none;border-radius:0}
+.doc-frame iframe{width:100%;height:100%;border:0;display:block;background:#fff}
 .abs-policy{font-size:14px;line-height:1.5;margin-top:-6px}
 .abs-policy p{margin:0 0 8px}.abs-policy p:last-child{margin:0}
 .kv.likes dd{white-space:normal}
@@ -425,7 +433,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "7";
+const APP_VERSION = "8";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -630,6 +638,7 @@ const LiveAPI = {
     }
     return res.json();
   },
+  async docsDelete(id){ await this.g(`/sites/${this.siteId}/drive/items/${id}`, { method: "DELETE" }); },
   async docsFolderAdd(sub, name){
     const path = [CONFIG.docsFolder, ...sub].map(encodeURIComponent).join("/");
     return this.g(`/sites/${this.siteId}/drive/root:/${path}:/children`, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -820,6 +829,7 @@ const DemoAPI = {
     return (this._docs[sub.join("/")] || []).slice();
   },
   async docsUpload(sub, name){ const it = { id: "d" + Date.now(), name, file: {}, webUrl: "#", lastModifiedDateTime: new Date().toISOString(), lastModifiedBy: { user: { displayName: S.me.name, email: S.me.emails[0] } } }; (this._docs[sub.join("/")] ||= []).push(it); return it; },
+  async docsDelete(id){ Object.values(this._docs).forEach(a => { const n = a.findIndex(x => x.id === id); if (n >= 0) a.splice(n, 1); }); },
   async docsFolderAdd(sub, name){ const it = { id: "f" + Date.now(), name, folder: { childCount: 0 }, lastModifiedDateTime: new Date().toISOString(), lastModifiedBy: { user: { displayName: S.me.name, email: S.me.emails[0] } } }; (this._docs[sub.join("/")] ||= []).push(it); return it; },
   async addItem(){ await new Promise(r => setTimeout(r, 150)); return "d" + Date.now() + Math.random().toString(36).slice(2, 6); },
   async postMessage(to, text){ return { id: "d" + Date.now(), toId: String(to.id), text, fromName: S.me.name, fromEmail: S.me.emails[0], at: new Date().toISOString() }; },
@@ -1080,12 +1090,12 @@ function viewDocs(){
   const crumbs = [CONFIG.docsFolder, ...D.path];
   const path = D.path.length ? `<nav class="doc-path" aria-label="Folder">${crumbs.map((c, n) => n === crumbs.length - 1 ? `<b>${esc(c)}</b>` : `<button data-act="docs-up" data-n="${n}">${esc(c)}</button><span class="sep">›</span>`).join("")}</nav>` : "";
   const rows = (D.items || []).map(it => {
-    const [cls, mark] = docKind(it), who = docEditor(it);
-    const by = `<span class="doc-by">${avatar(who, "xs")}<span>${esc(firstOf(who.fullName) === who.fullName ? who.fullName : who.fullName)} · ${esc(docAgo(it.lastModifiedDateTime))}</span></span>`;
-    const inner = `<span class="doc-ic ${cls}" aria-hidden="true">${mark}</span><span class="doc-meta"><b>${docPin(it) ? `<span class="doc-pin" title="Pinned">${ICON.pin}</span>` : ""}${esc(it.name.replace(/\.(docx|xlsx|pptx)$/i, ""))}</b>${it.folder ? `<span class="doc-by"><span>${it.folder.childCount ?? 0} item${it.folder.childCount === 1 ? "" : "s"}</span></span>` : by}</span><span class="chev">${ICON.next}</span>`;
+    const [cls, mark] = docKind(it);
+    const by = `<span class="doc-by"><span>Last updated ${esc(docAgo(it.lastModifiedDateTime))}</span></span>`;
+    const inner = `${it.folder ? `<span class="doc-ic ${cls}" aria-hidden="true">${mark}</span>` : ""}<span class="doc-meta"><b>${docPin(it) ? `<span class="doc-pin" title="Pinned">${ICON.pin}</span>` : ""}${esc(it.name.replace(/\.(docx|xlsx|pptx)$/i, ""))}</b>${it.folder ? `<span class="doc-by"><span>${it.folder.childCount ?? 0} item${it.folder.childCount === 1 ? "" : "s"}</span></span>` : by}</span><span class="chev">${ICON.next}</span>`;
     return it.folder
       ? `<button class="doc-row ${docPin(it) ? "pinned" : ""}" data-act="docs-open-folder" data-name="${esc(it.name)}">${inner}</button>`
-      : `<a class="doc-row ${docPin(it) ? "pinned" : ""}" href="${esc(it.webUrl)}" target="_blank" rel="noopener" data-act="docs-open-file">${inner}</a>`;
+      : `<button class="doc-row ${docPin(it) ? "pinned" : ""}" data-act="docs-view" data-id="${esc(it.id)}">${inner}</button>`;
   }).join("");
   const adder = isEditor() ? `<section class="panel stack"><h2 class="section-label" style="margin:0">Add to ${esc(crumbs[crumbs.length - 1])}</h2>
       <div class="doc-new">
@@ -1097,12 +1107,54 @@ function viewDocs(){
       ${D.busy ? `<span class="hint">${esc(D.busy)}</span>` : ""}</section>` : "";
   return `<div class="page-h"><h1>Team Documents</h1><span style="flex:1"></span><button class="iconbtn" data-act="docs-refresh" aria-label="Refresh" title="Refresh">${ICON.refresh}</button></div>
     ${path}
-    <p class="sub doc-tip" style="margin-top:-6px">Tap a document to open it in Word, Excel or PowerPoint. Everyone on the team can edit. While others have the same document open, their profile pictures show at the top of it and you'll see their changes as they type.</p>
+    <p class="sub doc-tip" style="margin-top:-6px">Tap a document to read it here. To make changes, tap <b>Edit</b>; it opens in Word, Excel or PowerPoint, where everyone on the team can edit and you'll see who else is in it.</p>
     ${D.loading && !D.items ? `<div class="empty">Loading documents…</div>`
       : D.error ? `<div class="empty">Couldn't load the documents. ${esc(D.error)}</div>`
       : rows ? `<div class="list">${rows}</div>` : `<div class="empty">No documents here yet.${isEditor() ? " Add one below." : ""}</div>`}
     ${adder}`;
 }
+/* In-app reader: Microsoft's preview of the file, framed inside the app (read-only).
+   Editing can't be framed (Microsoft blocks it), so Edit opens the file in Word/Excel/PowerPoint. */
+const OFFICE_EXT = /\.(docx?|xlsx?|pptx?|csv)$/i;
+async function docPreview(it){
+  const V = S.docView;
+  try {
+    if (DEMO){ V.url = ""; V.err = "Demo mode: the document shows here when connected."; }
+    else {
+      const pv = await API.g(`/sites/${API.siteId}/drive/items/${it.id}/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      V.url = pv.getUrl || "";
+      if (!V.url) V.err = "This file can't be shown here.";
+    }
+  } catch(e){ V.err = "Couldn't open the document. " + (e.message || e); }
+  V.loading = false; if (S.view === "doc") render();
+}
+function viewDoc(){
+  const it = (S.docs?.items || []).find(i => i.id === S.arg);
+  if (!it) return `${backBar("Document")}<div class="empty">This document isn't in the folder anymore.</div>`;
+  if (!S.docView || S.docView.id !== it.id){ S.docView = { id: it.id, loading: true, url: "", err: "" }; setTimeout(() => docPreview(it), 0); }
+  const V = S.docView, title = it.name.replace(/\.(docx|xlsx|pptx)$/i, "");
+  const edit = OFFICE_EXT.test(it.name)
+    ? `<a class="btn blue" href="${esc(it.webUrl)}" target="_blank" rel="noopener">${ICON.pencil.replace("<svg",'<svg width="16" height="16"')}Edit</a>`
+    : `<a class="btn" href="${esc(it.webUrl)}" target="_blank" rel="noopener">Open</a>`;
+  const del = isEditor() ? (S.docDelAsk === it.id
+      ? `<div class="confirm-row">Delete “${esc(title)}” for everyone?
+          <button class="btn decline-soft" data-act="docs-delete-yes" data-id="${esc(it.id)}" ${V.deleting ? "disabled" : ""}>${V.deleting ? "Deleting…" : "Yes, Delete"}</button>
+          <button class="btn" data-act="docs-delete-keep">Keep It</button></div>`
+      : `<button class="btn doc-del" data-act="docs-delete" data-id="${esc(it.id)}">Delete</button>`) : "";
+  return `<div class="page-h"><button class="back" data-act="back">${ICON.back}Back</button><span style="flex:1"></span>
+      <button class="iconbtn" data-act="docs-view-refresh" aria-label="Reload document" title="Reload">${ICON.refresh}</button></div>
+    <div class="doc-view-h"><h1>${esc(title)}</h1><span class="sub" style="margin:0">Last updated ${esc(docAgo(it.lastModifiedDateTime))}</span></div>
+    <div class="doc-actions">${edit}${del}</div>
+    <div class="doc-frame">${V.loading ? `<div class="empty">Opening…</div>`
+      : V.err ? `<div class="empty">${esc(V.err)}</div>`
+      : `<iframe src="${esc(V.url)}" title="${esc(title)}" allow="fullscreen" referrerpolicy="no-referrer"></iframe>`}</div>`;
+}
+/* Coming back from Word/Excel/PowerPoint: show the latest version. */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (S.view === "doc" && S.docView && !S.docView.loading && !S.docDelAsk){ S.docView = null; render(); if (S.docs) docsLoad(); }
+  else if (S.view === "docs" && S.docs && !S.docs.loading) docsLoad();
+});
 async function docsAdd(files){
   const D = S.docs; if (!files.length) return;
   try {
@@ -1618,8 +1670,8 @@ function render(){
     app.innerHTML = header + `<main><div class="wrap">${body}</div></main>`;
     return;
   }
-  const views = { admin: viewAdmin, directory: viewDirectory, home: viewHome, schedule: viewSchedule, calendar: viewCalendar, notes: viewNotes, team: viewTeam, member: viewMember, absence: viewAbsence, docs: viewDocs, profile: viewProfile };
-  const active = ["notes","team","member","admin"].includes(S.view) ? (S.stack[0]?.view || "home") : S.view;
+  const views = { admin: viewAdmin, directory: viewDirectory, home: viewHome, schedule: viewSchedule, calendar: viewCalendar, notes: viewNotes, team: viewTeam, member: viewMember, absence: viewAbsence, docs: viewDocs, doc: viewDoc, profile: viewProfile };
+  const active = ["notes","team","member","admin","doc"].includes(S.view) ? (S.stack[0]?.view || "home") : S.view;
   const demoBar = DEMO ? `<div class="demo"><span><strong>Demo mode.</strong> Sample people and dates; nothing is saved to SharePoint. Add your app's client ID in the configuration to connect the Serving Schedule list.</span></div>` : "";
   app.innerHTML = header + `<main><div class="wrap">${demoBar}${views[S.view]()}</div></main>
     <nav class="tabs" aria-label="Main"><div class="wrap">${TABS.map(([v,l,ic]) => `<button data-act="tab" data-view="${v}" ${v===active?'aria-current="page"':""}>${ic}<span>${l}</span></button>`).join("")}</div></nav>`;
@@ -1729,6 +1781,24 @@ document.addEventListener("click", async e => {
     case "accept": setStatus(item, true); break;
     case "abs-cancel": S.absConfirm = b.dataset.id; render(); break;
     case "docs-refresh": if (S.docs) docsLoad(); break;
+    case "docs-view": S.docView = null; S.docDelAsk = null; go("doc", b.dataset.id); break;
+    case "docs-view-refresh": S.docView = null; render(); break;
+    case "docs-delete": S.docDelAsk = b.dataset.id; render(); break;
+    case "docs-delete-keep": S.docDelAsk = null; render(); break;
+    case "docs-delete-yes": {
+      if (!isEditor()) break;
+      const it = (S.docs?.items || []).find(i => i.id === b.dataset.id); if (!it) break;
+      S.docView.deleting = true; render();
+      try {
+        await API.docsDelete(it.id);
+        S.docs.items = S.docs.items.filter(i => i.id !== it.id);
+        toast(`Deleted: ${it.name.replace(/\.(docx|xlsx|pptx)$/i, "")}`);
+        S.docDelAsk = null; S.docView = null;
+        const prev = S.stack.pop() || { view: "docs" }; go(prev.view, prev.arg, false);
+        docsLoad();
+      } catch(err){ S.docView.deleting = false; toast("Couldn't delete it. " + err.message, true); render(); }
+      break;
+    }
     case "docs-open-folder": S.docs.path.push(b.dataset.name); S.docs.items = null; render(); break;
     case "docs-up": S.docs.path = S.docs.path.slice(0, Number(b.dataset.n)); S.docs.items = null; render(); break;
     case "docs-new": {
@@ -1753,7 +1823,7 @@ document.addEventListener("click", async e => {
       catch(err){ toast("Couldn't add the folder. " + err.message, true); }
       break;
     }
-    case "docs-open-file": if (DEMO){ e.preventDefault(); toast("Demo mode: documents open in Word, Excel or PowerPoint when connected."); } break;
+
     case "abs-cancel-keep": S.absConfirm = null; render(); break;
     case "abs-cancel-yes": {
       if (!item || !isAbsent(item) || !mine(item)) break;
