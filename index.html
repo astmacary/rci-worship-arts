@@ -278,6 +278,10 @@ form.stack{display:flex;flex-direction:column;gap:14px}
 .abs-cal .dcell.sent{background:var(--bad-soft);color:var(--bad);opacity:1}
 .chip.sent{background:var(--bad-soft);color:var(--bad);border-color:transparent}
 .absent-list{margin:0}
+.cue.abs .when{padding:6px 4px}
+.cue.abs .cue-body{padding:10px 14px;justify-content:center}
+.abs-grid{display:flex;align-items:center;gap:10px}
+.abs-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .pill-stack{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin-left:auto}
 .pill-stack .pill{text-align:center}
 .pill-btn{background:transparent;color:var(--bad);border:1px solid var(--bad);font-family:inherit;line-height:inherit;cursor:pointer;padding:1px 8px}
@@ -296,6 +300,9 @@ form.stack{display:flex;flex-direction:column;gap:14px}
 .doc-by{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);min-width:0}
 .doc-by .av.xs{width:20px;height:20px;font-size:9px;flex:none}
 .doc-by span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-row.pinned{border-color:var(--accent)}
+.doc-pin{display:inline-flex;vertical-align:-2px;margin-right:6px;color:var(--accent)}
+.doc-pin svg{width:15px;height:15px}
 .doc-new{display:flex;flex-wrap:wrap;gap:8px}
 .doc-tip{font-size:13.5px;line-height:1.45}
 .abs-policy{font-size:14px;line-height:1.5;margin-top:-6px}
@@ -407,7 +414,8 @@ const CONFIG = {
   // "Places I Serve" on the profile row edits these two multi-choice columns.
   servingCols: [["LeaderPositions", "Leadership", true], ["SingingPositions", "Singing"], ["MusicianPositions", "Music"]],   // true = one choice only
   absentCategory: "Absent",
-  docsFolder: "Team Documents",    // folder in the site's Documents library shown on the Docs tab (everyone edits; admins add)
+  docsFolder: "RCI Worship Team Documents",   // folder in the site's Documents library shown on the Docs tab (everyone edits; admins add)
+  docsPinned: ["Worship Set List"],            // always listed first (matched by name, without the extension)
   likesCol: "TeamLikes_x002c_LovesandMore_x00",   // "Team Likes, Loves and More..." (Roster rows; each person edits their own)
   // Questions used when someone's Team Likes is still empty (same as the list's template).
   likesTemplate: ["Email:", "Birthday:", "Favorite place to shop:", "Favorite fast food:", "Favorite candy:", "Favorite restaurant:", "Favorite hot drink:", "Favorite cold drink:", "Favorite sweet snack:", "Favorite salty snack:", "Favorite music/author:", "Favorite Starbucks order:", "Favorite luxury/indulgence/treat:", "Aversions or Allergies?", "How do you like to be celebrated?", "What’s your primary love language?"],        // Service Category of the row the Absence tab adds for each day off
@@ -417,7 +425,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "6";
+const APP_VERSION = "7";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -455,6 +463,7 @@ const ICON = {
   chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/><path d="M8.5 11h7M8.5 14.5h4.5"/></svg>',
   folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   docs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M15 3v4h4"/><path d="M9 21h10a2 2 0 0 0 2-2V9"/></svg>',
+  pin:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M16 3a1 1 0 0 1 .7 1.7L15 6.4v4.3l2.7 2.7a1 1 0 0 1-.7 1.7h-4v5.4a1 1 0 0 1-2 0v-5.4H7a1 1 0 0 1-.7-1.7L9 10.7V6.4L7.3 4.7A1 1 0 0 1 8 3z"/></svg>',
   refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
 };
@@ -803,6 +812,7 @@ const DemoAPI = {
     const by = n => ({ user: { displayName: ["Jordan Ellis","Maya Thompson","Caleb Okafor"][n], email: ["jordan.ellis","maya.thompson","caleb.okafor"][n] + "@example.org" } });
     this._docs = this._docs || { "": [
       { id: "f1", name: "Rehearsal Recordings", folder: { childCount: 2 }, lastModifiedDateTime: ago(30), lastModifiedBy: by(1) },
+      { id: "d0", name: "Worship Set List.docx", file: {}, webUrl: "#", lastModifiedDateTime: ago(1), lastModifiedBy: by(0) },
       { id: "d1", name: "Set Lists 2026.docx", file: {}, webUrl: "#", lastModifiedDateTime: ago(0.2), lastModifiedBy: by(1) },
       { id: "d2", name: "Vocal Rotation.xlsx", file: {}, webUrl: "#", lastModifiedDateTime: ago(5), lastModifiedBy: by(2) },
       { id: "d3", name: "Team Guidelines.pdf", file: {}, webUrl: "#", lastModifiedDateTime: ago(200), lastModifiedBy: by(0) } ],
@@ -1049,11 +1059,17 @@ function docEditor(it){
   const prof = S.items.find(i => isProfile(i) && ((email && i.email === email) || (u.displayName && lc(i.fullName) === lc(u.displayName))));
   return prof || { fullName: u.displayName || "Someone", email };
 }
+/* Pinned documents (CONFIG.docsPinned) always come first, in the order listed. */
+function docPin(it){
+  const base = lc(it.name.replace(/\.[^.]+$/, ""));
+  const n = (CONFIG.docsPinned || []).findIndex(x => lc(x) === base);
+  return n < 0 ? 0 : 1000 - n;
+}
 async function docsLoad(){
   const D = S.docs; D.loading = true; D.error = ""; render();
   try {
     const list = await API.docsList(D.path);
-    D.items = list.sort((a, b) => (!!b.folder - !!a.folder) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+    D.items = list.sort((a, b) => (docPin(b) - docPin(a)) || (!!b.folder - !!a.folder) || a.name.localeCompare(b.name, undefined, { numeric: true }));
   } catch(e){ D.items = []; D.error = e.message || String(e); }
   D.loading = false; render();
 }
@@ -1066,10 +1082,10 @@ function viewDocs(){
   const rows = (D.items || []).map(it => {
     const [cls, mark] = docKind(it), who = docEditor(it);
     const by = `<span class="doc-by">${avatar(who, "xs")}<span>${esc(firstOf(who.fullName) === who.fullName ? who.fullName : who.fullName)} · ${esc(docAgo(it.lastModifiedDateTime))}</span></span>`;
-    const inner = `<span class="doc-ic ${cls}" aria-hidden="true">${mark}</span><span class="doc-meta"><b>${esc(it.name)}</b>${it.folder ? `<span class="doc-by"><span>${it.folder.childCount ?? 0} item${it.folder.childCount === 1 ? "" : "s"}</span></span>` : by}</span><span class="chev">${ICON.next}</span>`;
+    const inner = `<span class="doc-ic ${cls}" aria-hidden="true">${mark}</span><span class="doc-meta"><b>${docPin(it) ? `<span class="doc-pin" title="Pinned">${ICON.pin}</span>` : ""}${esc(it.name.replace(/\.(docx|xlsx|pptx)$/i, ""))}</b>${it.folder ? `<span class="doc-by"><span>${it.folder.childCount ?? 0} item${it.folder.childCount === 1 ? "" : "s"}</span></span>` : by}</span><span class="chev">${ICON.next}</span>`;
     return it.folder
-      ? `<button class="doc-row" data-act="docs-open-folder" data-name="${esc(it.name)}">${inner}</button>`
-      : `<a class="doc-row" href="${esc(it.webUrl)}" target="_blank" rel="noopener" data-act="docs-open-file">${inner}</a>`;
+      ? `<button class="doc-row ${docPin(it) ? "pinned" : ""}" data-act="docs-open-folder" data-name="${esc(it.name)}">${inner}</button>`
+      : `<a class="doc-row ${docPin(it) ? "pinned" : ""}" href="${esc(it.webUrl)}" target="_blank" rel="noopener" data-act="docs-open-file">${inner}</a>`;
   }).join("");
   const adder = isEditor() ? `<section class="panel stack"><h2 class="section-label" style="margin:0">Add to ${esc(crumbs[crumbs.length - 1])}</h2>
       <div class="doc-new">
@@ -1123,11 +1139,12 @@ function absentCue(i){
         <button class="btn decline-soft" data-act="abs-cancel-yes" data-id="${i.id}" ${busy?"disabled":""}>${busy ? "Canceling…" : "Yes, Cancel It"}</button>
         <button class="btn" data-act="abs-cancel-keep">Keep It</button></div>`
     : "";
-  return `<article class="cue">
+  return `<article class="cue abs">
     <div class="when"><span class="dow">${d.toLocaleDateString(undefined,{weekday:"short"})}</span><span class="day">${d.getDate()}</span><span class="mon">${d.toLocaleDateString(undefined,{month:"short"})}</span></div>
-    <div class="cue-body"><div class="cue-top"><span class="role">Absent</span>
+    <div class="cue-body"><div class="abs-grid">
+        <div class="abs-text"><span class="role">Absent</span><div class="cat">You sent an absence for this day.</div></div>
         <span class="pill-stack"><span class="pill bad">TIME OFF</span>${S.absConfirm === i.id ? "" : `<button class="pill pill-btn" data-act="abs-cancel" data-id="${i.id}">CANCEL</button>`}</span></div>
-      <div class="cat">You sent an absence for this day.</div>${actions}</div></article>`;
+      ${actions}</div></article>`;
 }
 function cue(i, opts={}){
   const d = fromKey(i.date);
