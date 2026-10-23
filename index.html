@@ -278,6 +278,10 @@ form.stack{display:flex;flex-direction:column;gap:14px}
 .abs-cal .dcell.sent{background:var(--bad-soft);color:var(--bad);opacity:1}
 .chip.sent{background:var(--bad-soft);color:var(--bad);border-color:transparent}
 .absent-list{margin:0}
+.abs-policy{font-size:14px;line-height:1.5;margin-top:-6px}
+.abs-policy p{margin:0 0 8px}.abs-policy p:last-child{margin:0}
+.kv.likes dd{white-space:normal}
+.likes-form .field{margin:0}
 .absent-row{display:flex;align-items:center;gap:10px;font-size:15px}
 .abs-cal .dowh{padding:0}
 .abs-cal .cal-head h2{font-size:18px}
@@ -382,14 +386,17 @@ const CONFIG = {
   positionCols: ["LeaderPositions", "SingingPositions", "MusicianPositions"],
   // "Places I Serve" on the profile row edits these two multi-choice columns.
   servingCols: [["LeaderPositions", "Leadership", true], ["SingingPositions", "Singing"], ["MusicianPositions", "Music"]],   // true = one choice only
-  absentCategory: "Absent",        // Service Category of the row the Absence tab adds for each day off
+  absentCategory: "Absent",
+  likesCol: "TeamLikes_x002c_LovesandMore_x00",   // "Team Likes, Loves and More..." (Roster rows; each person edits their own)
+  // Questions used when someone's Team Likes is still empty (same as the list's template).
+  likesTemplate: ["Email:", "Birthday:", "Favorite place to shop:", "Favorite fast food:", "Favorite candy:", "Favorite restaurant:", "Favorite hot drink:", "Favorite cold drink:", "Favorite sweet snack:", "Favorite salty snack:", "Favorite music/author:", "Favorite Starbucks order:", "Favorite luxury/indulgence/treat:", "Aversions or Allergies?", "How do you like to be celebrated?", "What’s your primary love language?"],        // Service Category of the row the Absence tab adds for each day off
   wallDays: 30,                    // birthday wall: open for posting and visible for this many days
   guidelinesUrl: ""                // optional link shown under announcements
 };
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "4";
+const APP_VERSION = "5";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -471,6 +478,7 @@ function normalize(id, f, emailById){
     birthday: spDate(f.Birthday),
     phone: f.PhoneNumber || "",
     photoRaw: f.Photo || "",
+    likes: f[CONFIG.likesCol] || "",
     serving: CONFIG.servingCols.flatMap(([c]) => Array.isArray(f[c]) ? f[c] : (f[c] ? [f[c]] : []))
   };
 }
@@ -526,7 +534,7 @@ const LiveAPI = {
         if (email && email.includes("@")) users.push({ id: String(u.id), email: lc(email), name: u.fields.Title || email });
       });
     } catch(e){ console.warn("Could not read User Information List; matching by name instead.", e); }
-    const sel = "Title,ServiceDate,ServiceCategory,CallTime,ServiceTime,FullName,NameEmailLookupId,Status,Published,Notes,Birthday,Photo,PhoneNumber,LeaderPositions,SingingPositions,MusicianPositions,TimeOffDate";
+    const sel = `Title,ServiceDate,ServiceCategory,CallTime,ServiceTime,FullName,NameEmailLookupId,Status,Published,Notes,Birthday,Photo,PhoneNumber,LeaderPositions,SingingPositions,MusicianPositions,TimeOffDate,${CONFIG.likesCol}`;
     const rows = await this.all(`${base}/${CONFIG.listId}/items?$expand=fields($select=${sel})&$top=500`);
     let names = [], servingChoices = [], choices = {};
     try {
@@ -569,6 +577,7 @@ const LiveAPI = {
     await this.g(`/sites/${this.siteId}/lists/${CONFIG.listId}/items/${id}/fields`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
   },
+  async deleteItem(id){ await this.g(`/sites/${this.siteId}/lists/${CONFIG.listId}/items/${id}`, { method: "DELETE" }); },
   /* Adds a row with the given fields; returns its id. */
   async addItem(f){
     const r = await this.g(`/sites/${this.siteId}/lists/${CONFIG.listId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: f }) });
@@ -738,6 +747,7 @@ const DemoAPI = {
   },
   photo(){ return Promise.resolve(null); },
   async addRow(){ await new Promise(r => setTimeout(r, 250)); return "d" + Date.now(); },
+  async deleteItem(){ await new Promise(r => setTimeout(r, 150)); },
   async addItem(){ await new Promise(r => setTimeout(r, 150)); return "d" + Date.now() + Math.random().toString(36).slice(2, 6); },
   async postMessage(to, text){ return { id: "d" + Date.now(), toId: String(to.id), text, fromName: S.me.name, fromEmail: S.me.emails[0], at: new Date().toISOString() }; },
   async deleteMessage(){},
@@ -957,13 +967,38 @@ function statusPill(i){
   return `<span class="pill neutral">${esc(i.status || "Draft")}</span>`;
 }
 
-/* A day off from the Absence tab, shown like an assignment card. */
+/* Team Likes: one "Question: answer" (or "Question? answer") per line. */
+function parseLikes(text){
+  const lines = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const qa = [], extra = [];
+  lines.forEach(l => {
+    const m = l.match(/^(.{2,80}?[:?])\s*(.*)$/);
+    if (m) qa.push({ q: m[1], a: m[2].trim() }); else extra.push(l);
+  });
+  if (!qa.length) CONFIG.likesTemplate.forEach(q => qa.push({ q, a: "" }));
+  return { qa, extra: extra.join("\n") };
+}
+function likesLabel(q){ return q.replace(/:$/, ""); }
+function likesSection(p){
+  const { qa, extra } = parseLikes(p.likes);
+  const filled = qa.filter(x => x.a);
+  if (!filled.length && !extra) return `<section><h2 class="section-label">Team Likes, Loves and More</h2><div class="empty">Nothing shared yet.</div></section>`;
+  return `<section><h2 class="section-label">Team Likes, Loves and More</h2><div class="panel"><dl class="kv likes">
+    ${filled.map(x => `<dt>${esc(likesLabel(x.q))}</dt><dd>${esc(x.a)}</dd>`).join("")}
+    ${extra ? `<dt>More</dt><dd style="white-space:pre-line">${esc(extra)}</dd>` : ""}</dl></div></section>`;
+}
+/* A day off from the Absence tab, shown like an assignment card, with Cancel. */
 function absentCue(i){
-  const d = fromKey(i.date);
+  const d = fromKey(i.date), busy = S.busy.has(i.id);
+  const actions = S.absConfirm === i.id
+    ? `<div class="confirm-row">Cancel your time off on ${esc(fmtShort(i.date))}?
+        <button class="btn decline-soft" data-act="abs-cancel-yes" data-id="${i.id}" ${busy?"disabled":""}>${busy ? "Canceling…" : "Yes, Cancel It"}</button>
+        <button class="btn" data-act="abs-cancel-keep">Keep It</button></div>`
+    : `<div class="actions"><button class="btn" data-act="abs-cancel" data-id="${i.id}">Cancel Time Off</button></div>`;
   return `<article class="cue">
     <div class="when"><span class="dow">${d.toLocaleDateString(undefined,{weekday:"short"})}</span><span class="day">${d.getDate()}</span><span class="mon">${d.toLocaleDateString(undefined,{month:"short"})}</span></div>
     <div class="cue-body"><div class="cue-top"><span class="role">Absent</span><span class="pill bad">TIME OFF</span></div>
-      <div class="cat">You sent an absence for this day.</div></div></article>`;
+      <div class="cat">You sent an absence for this day.</div>${actions}</div></article>`;
 }
 function cue(i, opts={}){
   const d = fromKey(i.date);
@@ -1151,11 +1186,13 @@ function viewMember(){
       ${p.email && myProfile()?.id !== p.id ? `<a class="btn blue" href="mailto:${esc(p.email)}">${ICON.mail}Email Me</a><span class="sub email-addr">${esc(p.email)}</span>` : ""}</section>
     <section class="panel"><dl class="kv">
       <dt>First Name</dt><dd>${esc(p.first || "—")}</dd>
+      <dt>Email</dt><dd>${p.email ? `<a href="mailto:${esc(p.email)}" style="color:var(--accent);font-weight:600;word-break:break-all">${esc(p.email)}</a>` : "—"}</dd>
       <dt>Birthday</dt><dd>${esc(bd)}</dd>
       ${p.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ""))}" style="color:var(--accent);font-weight:600">${esc(p.phone)}</a></dd>` : ""}
     </dl></section>
     <section><h2 class="section-label">Roles</h2>
       ${(p.positions || []).length ? `<ul class="panel rows">${p.positions.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">No roles listed yet.</div>`}</section>
+    ${likesSection(p)}
     ${wallSection(p)}
     ${next.length ? `<section><h2 class="section-label">Serving Next</h2><div class="list">${next.map(i=>`<div class="panel" style="padding:10px 14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(i.role)}</b><span class="sub" style="margin:0">${esc(fmtShort(i.date))}</span></div>`).join("")}</div></section>` : ""}`;
 }
@@ -1193,7 +1230,10 @@ function viewAbsence(){
   const picked = [...A.sel].sort();
   const thisMonth = m.getFullYear() === new Date().getFullYear() && m.getMonth() === new Date().getMonth();
   return `<div class="page-h"><h1>Time Off</h1></div>
-    <p class="sub" style="margin-top:-10px">Tap every day you can't serve. If your plans change, come back and send more dates.</p>
+    <div class="panel abs-policy">
+      <p>As a courtesy to the entire team, we ask that all absence/vacation notices be submitted at least <b>30 days in advance</b>. This is for the sake of planning and <b>NOT</b> approval. As a matter of general consideration, please try not to plan absences on 1st Sundays and other “special days” including but not limited to Church Anniversary, Easter, Founder’s Day, International Sunday, Consecration, and OWCI events.</p>
+      <p><b>Note:</b> We will do whatever is necessary to accommodate emergencies and unforeseen last-minute plans.</p></div>
+    <p class="sub">Tap every day you can't serve, then submit. To cancel a day you've already sent, tap it under Already Sent.</p>
     <form class="panel stack abs-form" id="absenceForm">
       <div class="field abs-cal">
         <div class="cal-head"><h2>${m.toLocaleDateString(undefined,{month:"long",year:"numeric"})}</h2>
@@ -1202,7 +1242,10 @@ function viewAbsence(){
         <div class="grid7">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=>`<div class="dowh">${x}</div>`).join("")}${cells}</div>
         <div class="picked">${picked.length ? picked.map(k => `<button type="button" class="chip" data-act="abs-pick" data-date="${k}" aria-label="Remove ${esc(fmtLong(k))}">${esc(fmtShort(k))} <span aria-hidden="true">×</span></button>`).join("") : `<span class="hint">No dates picked yet.</span>`}</div>
       </div>
-      ${upcoming.length ? `<div class="field"><span class="label">Already Sent</span><div class="picked">${upcoming.map(k => `<span class="chip sent">${esc(fmtShort(k))}</span>`).join("")}</div></div>` : ""}
+      ${upcoming.length ? `<div class="field"><span class="label">Already Sent</span><div class="picked">${upcoming.map(k => { const r = myAbsences().find(i => i.date === k); return `<button type="button" class="chip sent" data-act="abs-cancel" data-id="${esc(r.id)}" aria-label="Cancel time off on ${esc(fmtLong(k))}">${esc(fmtShort(k))} <span aria-hidden="true">×</span></button>`; }).join("")}</div>
+      ${S.absConfirm && myAbsences().some(i => i.id === S.absConfirm) ? (() => { const r = myAbsences().find(i => i.id === S.absConfirm), busy = S.busy.has(r.id); return `<div class="confirm-row">Cancel your time off on ${esc(fmtShort(r.date))}?
+        <button type="button" class="btn decline-soft" data-act="abs-cancel-yes" data-id="${esc(r.id)}" ${busy?"disabled":""}>${busy ? "Canceling…" : "Yes, Cancel It"}</button>
+        <button type="button" class="btn" data-act="abs-cancel-keep">Keep It</button></div>`; })() : ""}</div>` : ""}
       <div class="field"><label for="ab-notes">Notes</label><textarea id="ab-notes" placeholder="Anything the schedule team should know (optional).">${esc(A.notes)}</textarea></div>
       <button class="btn blue block" type="submit" id="ab-submit">Submit Absence${picked.length > 1 ? ` (${picked.length} days)` : ""}</button></form>`;
 }
@@ -1233,13 +1276,15 @@ function viewProfile(){
     <form class="panel stack" id="profileForm">
       <div class="field"><label for="pf-full">Full Name</label><input id="pf-full" value="${esc(p.fullName)}" disabled></div>
       <div class="field"><label for="pf-email">Email</label><input id="pf-email" type="email" value="${esc(p.email || "")}" placeholder="Not set yet: ask the schedule admin to fill in Name Email" disabled></div>
-      <div class="field"><label for="pf-bday">Birthday</label><input id="pf-bday" type="date" value="${esc(p.birthday)}"></div>
-      <div class="field"><label for="pf-phone">Phone Number</label><input id="pf-phone" type="tel" value="${esc(p.phone)}" maxlength="255"></div>
-      <div class="field"><span class="label">Roles</span>
-        <span class="hint">Check the roles that apply to you, then save.</span>
-        ${servingGroups(p).map(g => `<span class="hint" style="font-weight:700;margin-top:6px">${esc(g.label)}${g.single ? " (pick one)" : ""}</span>
-        <div class="checklist">${g.choices.map(x => `<button type="button" class="serve-opt" data-act="serve-toggle" data-col="${esc(g.col)}" ${g.single ? 'data-single="1"' : ""} data-value="${esc(x)}" aria-pressed="${p.serving.includes(x)}"><span class="box" aria-hidden="true">${ICON.check}</span>${esc(x)}</button>`).join("")}</div>`).join("")}</div>
-      <button class="btn blue block" type="submit" id="pf-save">Save Profile</button></form>
+      <div class="field"><label for="pf-bday">Birthday</label><input id="pf-bday" value="${esc(p.birthday ? fromKey(p.birthday).toLocaleDateString(undefined,{month:"long",day:"numeric"}) : "")}" placeholder="Not set yet" disabled></div>
+      <div class="field"><label for="pf-phone">Phone Number</label><input id="pf-phone" type="tel" value="${esc(p.phone)}" placeholder="Not set yet" disabled></div>
+      <span class="hint">To change your name, email, birthday or phone, ask the schedule admin.</span></form>
+    <form class="panel stack likes-form" id="likesForm">
+      <h2 class="section-label" style="margin:0">Team Likes, Loves and More</h2>
+      <span class="hint" style="margin-top:-6px">Share a few favorites so the team can celebrate you. Fill in what you like, then save.</span>
+      ${(() => { const { qa, extra } = parseLikes(p.likes); return qa.map((x, n) => `<div class="field"><label for="lk-${n}">${esc(likesLabel(x.q))}</label><input id="lk-${n}" data-q="${esc(x.q)}" value="${esc(x.a)}" maxlength="300"></div>`).join("")
+        + `<div class="field"><label for="lk-extra">Anything Else</label><textarea id="lk-extra" maxlength="1000">${esc(extra)}</textarea></div>`; })()}
+      <button class="btn blue block" type="submit" id="pf-save">Save</button></form>
     ${isEditor() ? `<section class="panel install"><h2 class="section-label" style="margin:0">Admin</h2><p>Assign people, and change Status and Published on the upcoming schedule.</p><button class="btn blue" data-act="admin-open">${ICON.cal.replace("<svg",'<svg width="16" height="16"')}Edit Schedule</button></section>` : ""}
     ${badgePanel()}${installPanel()}`;
 }
@@ -1466,7 +1511,7 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act, item = S.items.find(i => i.id === b.dataset.id);
   switch(act){
-    case "tab": S.stack = []; S.absenceDone = false; S.notesEdit = null; S.annEdit = false; S.annConfirm = null; go(b.dataset.view, null, false); break;
+    case "tab": S.stack = []; S.absenceDone = false; S.absConfirm = null; S.notesEdit = null; S.annEdit = false; S.annConfirm = null; go(b.dataset.view, null, false); break;
     case "notes-edit": S.notesEdit = S.arg; render(); setTimeout(() => $("#notes-editor")?.focus(), 0); break;
     case "notes-cancel": S.notesEdit = null; render(); break;
     case "fmt": {
@@ -1536,6 +1581,18 @@ document.addEventListener("click", async e => {
     case "back": { S.notesEdit = null; const prev = S.stack.pop() || { view: "home" }; go(prev.view, prev.arg, false); break; }
     case "theme": toggleTheme(); break;
     case "accept": setStatus(item, true); break;
+    case "abs-cancel": S.absConfirm = b.dataset.id; render(); break;
+    case "abs-cancel-keep": S.absConfirm = null; render(); break;
+    case "abs-cancel-yes": {
+      if (!item || !isAbsent(item) || !mine(item)) break;
+      S.busy.add(item.id); render();
+      try {
+        await API.deleteItem(item.id);
+        S.items = S.items.filter(i => i.id !== item.id);
+        toast(`Time off canceled: ${fmtShort(item.date)}`);
+      } catch(err){ toast("Couldn't cancel your time off. " + err.message, true); }
+      S.busy.delete(item.id); S.absConfirm = null; render(); break;
+    }
     case "ask-decline": S.confirm = item.id; render(); break;
     case "decline": setStatus(item, false); break;
     case "cancel": S.confirm = null; render(); break;
@@ -1674,22 +1731,18 @@ document.addEventListener("submit", async e => {
     catch(err){ toast("Couldn't post your message. " + err.message, true); btn.disabled = false; btn.textContent = "Post Message"; }
     return;
   }
-  if (e.target.id === "profileForm"){
-    const on = [...document.querySelectorAll('.serve-opt[aria-pressed="true"]')];
-    const serving = on.map(b => b.dataset.value);
-    const f = { Birthday: toSp($("#pf-bday").value), PhoneNumber: $("#pf-phone").value.trim() };
-    CONFIG.servingCols.forEach(([c, , single]) => {
-      const vals = on.filter(b => b.dataset.col === c).map(b => b.dataset.value);
-      if (single){ f[c] = vals[0] || null; return; }
-      f[c + "@odata.type"] = "Collection(Edm.String)"; f[c] = vals;
-    });
+  if (e.target.id === "profileForm") return;
+  if (e.target.id === "likesForm"){
+    // Only Team Likes is saved, and only on the signed-in person's own Roster row.
+    if (!p || !mine(p)) return;
+    const lines = [...e.target.querySelectorAll("input[data-q]")].map(x => `${x.dataset.q} ${x.value.trim()}`.trimEnd());
+    const extra = $("#lk-extra").value.trim();
+    const text = lines.join("\n") + "\n" + (extra ? extra + "\n" : "");
     const btn = $("#pf-save"); btn.disabled = true; btn.textContent = "Saving…";
     try {
-      await API.update(p.id, f);
-      Object.assign(p, { birthday: $("#pf-bday").value, phone: f.PhoneNumber, serving });
-      p.positions = CONFIG.positionCols.flatMap(c => [].concat(f[c] || []));
-      toast("Profile updated"); render();
-    } catch(err){ toast("Couldn't save your profile. " + err.message, true); btn.disabled = false; btn.textContent = "Save Profile"; }
+      await API.update(p.id, { [CONFIG.likesCol]: text });
+      p.likes = text; toast("Saved"); render();
+    } catch(err){ toast("Couldn't save. " + err.message, true); btn.disabled = false; btn.textContent = "Save"; }
   }
 });
 
@@ -1769,7 +1822,7 @@ async function checkForUpdate(){
     const text = await fetch("index.html?v=" + Date.now(), { cache: "no-store" }).then(r => r.ok ? r.text() : "");
     const live = (text.match(/APP_VERSION = "([^"]+)"/) || [])[1];
     if (!live || live === APP_VERSION) return;
-    const busy = S.annEdit || S.notesEdit || document.querySelector("#wall-text, #ab-notes, #ann-text")?.value;
+    const busy = S.annEdit || S.notesEdit || document.querySelector("#wall-text, #ab-notes, #ann-text")?.value || document.activeElement?.closest?.("#likesForm");
     if (busy){ toast("A new version of the app is ready. It will load next time you open it."); return; }
     navigator.serviceWorker?.getRegistration().then(r => r && r.update()).catch(() => {});
     location.reload();
