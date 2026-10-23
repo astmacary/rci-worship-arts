@@ -278,6 +278,26 @@ form.stack{display:flex;flex-direction:column;gap:14px}
 .abs-cal .dcell.sent{background:var(--bad-soft);color:var(--bad);opacity:1}
 .chip.sent{background:var(--bad-soft);color:var(--bad);border-color:transparent}
 .absent-list{margin:0}
+.pill-stack{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin-left:auto}
+.pill-stack .pill{text-align:center}
+.pill-btn{background:transparent;color:var(--bad);border:1px solid var(--bad);font-family:inherit;line-height:inherit;cursor:pointer;padding:1px 8px}
+.pill-btn:hover{background:var(--bad-soft)}
+/* Documents */
+.doc-path{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:14px;margin:-8px 0 2px}
+.doc-path button{background:none;border:none;color:var(--accent);font:inherit;font-weight:600;padding:2px 0;cursor:pointer}
+.doc-path span.sep{color:var(--muted)}
+.doc-row{display:flex;align-items:center;gap:12px;padding:12px 14px;text-decoration:none;color:inherit;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;font:inherit;cursor:pointer}
+.doc-row:hover{border-color:var(--accent)}
+.doc-ic{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex:none;font-family:var(--display);font-weight:700;font-size:13px;color:#fff;letter-spacing:.02em}
+.doc-ic.w{background:#2B579A}.doc-ic.x{background:#217346}.doc-ic.p{background:#B7472A}.doc-ic.pdf{background:#C4302B}.doc-ic.f{background:var(--surface-2);color:var(--accent)}.doc-ic.o{background:var(--surface-2);color:var(--muted)}
+.doc-ic svg{width:22px;height:22px}
+.doc-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.doc-meta b{font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-by{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);min-width:0}
+.doc-by .av.xs{width:20px;height:20px;font-size:9px;flex:none}
+.doc-by span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-new{display:flex;flex-wrap:wrap;gap:8px}
+.doc-tip{font-size:13.5px;line-height:1.45}
 .abs-policy{font-size:14px;line-height:1.5;margin-top:-6px}
 .abs-policy p{margin:0 0 8px}.abs-policy p:last-child{margin:0}
 .kv.likes dd{white-space:normal}
@@ -315,7 +335,7 @@ ul.rows li:first-child{border-top:none}
 
 /* Bottom nav */
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-nav.tabs .wrap{display:grid;grid-template-columns:repeat(5,1fr);gap:2px;padding-block:2px}
+nav.tabs .wrap{display:grid;grid-template-columns:repeat(6,1fr);gap:2px;padding-block:2px}
 nav.tabs button{background:none;border:none;border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 2px;color:var(--muted);font-family:var(--display);font-weight:600;font-size:11px;letter-spacing:.02em;text-transform:uppercase;min-width:0}
 nav.tabs button span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 nav.tabs button svg{width:20px;height:20px}
@@ -387,6 +407,7 @@ const CONFIG = {
   // "Places I Serve" on the profile row edits these two multi-choice columns.
   servingCols: [["LeaderPositions", "Leadership", true], ["SingingPositions", "Singing"], ["MusicianPositions", "Music"]],   // true = one choice only
   absentCategory: "Absent",
+  docsFolder: "Team Documents",    // folder in the site's Documents library shown on the Docs tab (everyone edits; admins add)
   likesCol: "TeamLikes_x002c_LovesandMore_x00",   // "Team Likes, Loves and More..." (Roster rows; each person edits their own)
   // Questions used when someone's Team Likes is still empty (same as the list's template).
   likesTemplate: ["Email:", "Birthday:", "Favorite place to shop:", "Favorite fast food:", "Favorite candy:", "Favorite restaurant:", "Favorite hot drink:", "Favorite cold drink:", "Favorite sweet snack:", "Favorite salty snack:", "Favorite music/author:", "Favorite Starbucks order:", "Favorite luxury/indulgence/treat:", "Aversions or Allergies?", "How do you like to be celebrated?", "What’s your primary love language?"],        // Service Category of the row the Absence tab adds for each day off
@@ -396,7 +417,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "5";
+const APP_VERSION = "6";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -432,6 +453,9 @@ const ICON = {
   mail:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
   pencil:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
   chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/><path d="M8.5 11h7M8.5 14.5h4.5"/></svg>',
+  folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  docs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M15 3v4h4"/><path d="M9 21h10a2 2 0 0 0 2-2V9"/></svg>',
+  refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
 };
 
@@ -576,6 +600,31 @@ const LiveAPI = {
   async update(id, fields){
     await this.g(`/sites/${this.siteId}/lists/${CONFIG.listId}/items/${id}/fields`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields) });
+  },
+  /* Team documents: the site's Documents library, inside CONFIG.docsFolder. */
+  async docsList(sub){
+    const path = [CONFIG.docsFolder, ...sub].map(encodeURIComponent).join("/");
+    const sel = "id,name,webUrl,file,folder,size,lastModifiedDateTime,lastModifiedBy";
+    return this.all(`/sites/${this.siteId}/drive/root:/${path}:/children?$select=${sel}&$top=200`);
+  },
+  async docsUpload(sub, name, blob){
+    const path = [CONFIG.docsFolder, ...sub, name].map(encodeURIComponent).join("/");
+    const base = `/sites/${this.siteId}/drive/root:/${path}:`;
+    if (blob.size <= 4 * 1024 * 1024)
+      return this.g(`${base}/content?@microsoft.graph.conflictBehavior=rename`, { method: "PUT", body: blob });
+    const ses = await this.g(`${base}/createUploadSession`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename" } }) });
+    const chunk = 5 * 320 * 1024; let res;
+    for (let at = 0; at < blob.size; at += chunk){
+      const part = blob.slice(at, Math.min(at + chunk, blob.size));
+      res = await fetch(ses.uploadUrl, { method: "PUT", headers: { "Content-Range": `bytes ${at}-${at + part.size - 1}/${blob.size}` }, body: part });
+      if (!res.ok && res.status !== 202) throw new Error("Upload failed (" + res.status + ")");
+    }
+    return res.json();
+  },
+  async docsFolderAdd(sub, name){
+    const path = [CONFIG.docsFolder, ...sub].map(encodeURIComponent).join("/");
+    return this.g(`/sites/${this.siteId}/drive/root:/${path}:/children`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, folder: {}, "@microsoft.graph.conflictBehavior": "rename" }) });
   },
   async deleteItem(id){ await this.g(`/sites/${this.siteId}/lists/${CONFIG.listId}/items/${id}`, { method: "DELETE" }); },
   /* Adds a row with the given fields; returns its id. */
@@ -748,6 +797,20 @@ const DemoAPI = {
   photo(){ return Promise.resolve(null); },
   async addRow(){ await new Promise(r => setTimeout(r, 250)); return "d" + Date.now(); },
   async deleteItem(){ await new Promise(r => setTimeout(r, 150)); },
+  _docs: null,
+  async docsList(sub){
+    const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
+    const by = n => ({ user: { displayName: ["Jordan Ellis","Maya Thompson","Caleb Okafor"][n], email: ["jordan.ellis","maya.thompson","caleb.okafor"][n] + "@example.org" } });
+    this._docs = this._docs || { "": [
+      { id: "f1", name: "Rehearsal Recordings", folder: { childCount: 2 }, lastModifiedDateTime: ago(30), lastModifiedBy: by(1) },
+      { id: "d1", name: "Set Lists 2026.docx", file: {}, webUrl: "#", lastModifiedDateTime: ago(0.2), lastModifiedBy: by(1) },
+      { id: "d2", name: "Vocal Rotation.xlsx", file: {}, webUrl: "#", lastModifiedDateTime: ago(5), lastModifiedBy: by(2) },
+      { id: "d3", name: "Team Guidelines.pdf", file: {}, webUrl: "#", lastModifiedDateTime: ago(200), lastModifiedBy: by(0) } ],
+      "Rehearsal Recordings": [{ id: "d4", name: "Oct 18 run-through.m4a", file: {}, webUrl: "#", lastModifiedDateTime: ago(120), lastModifiedBy: by(2) }] };
+    return (this._docs[sub.join("/")] || []).slice();
+  },
+  async docsUpload(sub, name){ const it = { id: "d" + Date.now(), name, file: {}, webUrl: "#", lastModifiedDateTime: new Date().toISOString(), lastModifiedBy: { user: { displayName: S.me.name, email: S.me.emails[0] } } }; (this._docs[sub.join("/")] ||= []).push(it); return it; },
+  async docsFolderAdd(sub, name){ const it = { id: "f" + Date.now(), name, folder: { childCount: 0 }, lastModifiedDateTime: new Date().toISOString(), lastModifiedBy: { user: { displayName: S.me.name, email: S.me.emails[0] } } }; (this._docs[sub.join("/")] ||= []).push(it); return it; },
   async addItem(){ await new Promise(r => setTimeout(r, 150)); return "d" + Date.now() + Math.random().toString(36).slice(2, 6); },
   async postMessage(to, text){ return { id: "d" + Date.now(), toId: String(to.id), text, fromName: S.me.name, fromEmail: S.me.emails[0], at: new Date().toISOString() }; },
   async deleteMessage(){},
@@ -967,6 +1030,71 @@ function statusPill(i){
   return `<span class="pill neutral">${esc(i.status || "Draft")}</span>`;
 }
 
+/* ---------- Docs tab: the shared Team Documents folder ---------- */
+const DOC_KINDS = { docx: ["w","W","Word"], doc: ["w","W","Word"], xlsx: ["x","X","Excel"], xls: ["x","X","Excel"], csv: ["x","X","Excel"], pptx: ["p","P","PowerPoint"], ppt: ["p","P","PowerPoint"], pdf: ["pdf","PDF",""] };
+function docKind(it){
+  if (it.folder) return ["f", ICON.folder, ""];
+  const ext = (it.name.split(".").pop() || "").toLowerCase();
+  return DOC_KINDS[ext] || ["o", esc(ext.slice(0, 4).toUpperCase() || "FILE"), ""];
+}
+function docAgo(iso){
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 1) return "just now"; if (mins < 60) return `${mins} min ago`;
+  const h = Math.round(mins / 60); if (h < 24) return `${h} hr ago`;
+  const d = Math.round(h / 24); if (d < 7) return `${d} day${d > 1 ? "s" : ""} ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: d > 300 ? "numeric" : undefined });
+}
+function docEditor(it){
+  const u = it.lastModifiedBy?.user || {}, email = lc(u.email || "");
+  const prof = S.items.find(i => isProfile(i) && ((email && i.email === email) || (u.displayName && lc(i.fullName) === lc(u.displayName))));
+  return prof || { fullName: u.displayName || "Someone", email };
+}
+async function docsLoad(){
+  const D = S.docs; D.loading = true; D.error = ""; render();
+  try {
+    const list = await API.docsList(D.path);
+    D.items = list.sort((a, b) => (!!b.folder - !!a.folder) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+  } catch(e){ D.items = []; D.error = e.message || String(e); }
+  D.loading = false; render();
+}
+function viewDocs(){
+  S.docs = S.docs || { path: [], items: null };
+  const D = S.docs;
+  if (!D.items && !D.loading) { setTimeout(docsLoad, 0); }
+  const crumbs = [CONFIG.docsFolder, ...D.path];
+  const path = D.path.length ? `<nav class="doc-path" aria-label="Folder">${crumbs.map((c, n) => n === crumbs.length - 1 ? `<b>${esc(c)}</b>` : `<button data-act="docs-up" data-n="${n}">${esc(c)}</button><span class="sep">›</span>`).join("")}</nav>` : "";
+  const rows = (D.items || []).map(it => {
+    const [cls, mark] = docKind(it), who = docEditor(it);
+    const by = `<span class="doc-by">${avatar(who, "xs")}<span>${esc(firstOf(who.fullName) === who.fullName ? who.fullName : who.fullName)} · ${esc(docAgo(it.lastModifiedDateTime))}</span></span>`;
+    const inner = `<span class="doc-ic ${cls}" aria-hidden="true">${mark}</span><span class="doc-meta"><b>${esc(it.name)}</b>${it.folder ? `<span class="doc-by"><span>${it.folder.childCount ?? 0} item${it.folder.childCount === 1 ? "" : "s"}</span></span>` : by}</span><span class="chev">${ICON.next}</span>`;
+    return it.folder
+      ? `<button class="doc-row" data-act="docs-open-folder" data-name="${esc(it.name)}">${inner}</button>`
+      : `<a class="doc-row" href="${esc(it.webUrl)}" target="_blank" rel="noopener" data-act="docs-open-file">${inner}</a>`;
+  }).join("");
+  const adder = isEditor() ? `<section class="panel stack"><h2 class="section-label" style="margin:0">Add to ${esc(crumbs[crumbs.length - 1])}</h2>
+      <div class="doc-new">
+        <button class="btn" data-act="docs-new" data-kind="docx">New Word Doc</button>
+        <button class="btn" data-act="docs-new" data-kind="xlsx">New Spreadsheet</button>
+        <button class="btn" data-act="docs-new" data-kind="pptx">New Slides</button>
+        <label class="btn" for="docs-file" style="cursor:pointer">Upload File</label><input id="docs-file" type="file" multiple hidden>
+        <button class="btn" data-act="docs-folder">New Folder</button></div>
+      ${D.busy ? `<span class="hint">${esc(D.busy)}</span>` : ""}</section>` : "";
+  return `<div class="page-h"><h1>Team Documents</h1><span style="flex:1"></span><button class="iconbtn" data-act="docs-refresh" aria-label="Refresh" title="Refresh">${ICON.refresh}</button></div>
+    ${path}
+    <p class="sub doc-tip" style="margin-top:-6px">Tap a document to open it in Word, Excel or PowerPoint. Everyone on the team can edit. While others have the same document open, their profile pictures show at the top of it and you'll see their changes as they type.</p>
+    ${D.loading && !D.items ? `<div class="empty">Loading documents…</div>`
+      : D.error ? `<div class="empty">Couldn't load the documents. ${esc(D.error)}</div>`
+      : rows ? `<div class="list">${rows}</div>` : `<div class="empty">No documents here yet.${isEditor() ? " Add one below." : ""}</div>`}
+    ${adder}`;
+}
+async function docsAdd(files){
+  const D = S.docs; if (!files.length) return;
+  try {
+    for (const [n, f] of files.entries()){ D.busy = `Uploading ${f.name}${files.length > 1 ? ` (${n + 1} of ${files.length})` : ""}…`; render(); await API.docsUpload(D.path, f.name, f); }
+    toast(files.length > 1 ? `${files.length} files added` : `Added: ${files[0].name}`);
+  } catch(e){ toast("Couldn't add the file. " + e.message, true); }
+  D.busy = ""; await docsLoad();
+}
 /* Team Likes: one "Question: answer" (or "Question? answer") per line. */
 function parseLikes(text){
   const lines = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -994,10 +1122,11 @@ function absentCue(i){
     ? `<div class="confirm-row">Cancel your time off on ${esc(fmtShort(i.date))}?
         <button class="btn decline-soft" data-act="abs-cancel-yes" data-id="${i.id}" ${busy?"disabled":""}>${busy ? "Canceling…" : "Yes, Cancel It"}</button>
         <button class="btn" data-act="abs-cancel-keep">Keep It</button></div>`
-    : `<div class="actions"><button class="btn" data-act="abs-cancel" data-id="${i.id}">Cancel Time Off</button></div>`;
+    : "";
   return `<article class="cue">
     <div class="when"><span class="dow">${d.toLocaleDateString(undefined,{weekday:"short"})}</span><span class="day">${d.getDate()}</span><span class="mon">${d.toLocaleDateString(undefined,{month:"short"})}</span></div>
-    <div class="cue-body"><div class="cue-top"><span class="role">Absent</span><span class="pill bad">TIME OFF</span></div>
+    <div class="cue-body"><div class="cue-top"><span class="role">Absent</span>
+        <span class="pill-stack"><span class="pill bad">TIME OFF</span>${S.absConfirm === i.id ? "" : `<button class="pill pill-btn" data-act="abs-cancel" data-id="${i.id}">CANCEL</button>`}</span></div>
       <div class="cat">You sent an absence for this day.</div>${actions}</div></article>`;
 }
 function cue(i, opts={}){
@@ -1457,7 +1586,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:" && window.top
   navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {});
 }
 
-const TABS = [["home","Home",ICON.home],["calendar","Calendar",ICON.cal],["absence","Absence",ICON.away],["directory","Team",ICON.team],["profile","Profile",ICON.user]];
+const TABS = [["home","Home",ICON.home],["calendar","Calendar",ICON.cal],["absence","Absence",ICON.away],["directory","Team",ICON.team],["docs","Docs",ICON.docs],["profile","Profile",ICON.user]];
 
 function render(){
   const app = $("#app");
@@ -1472,7 +1601,7 @@ function render(){
     app.innerHTML = header + `<main><div class="wrap">${body}</div></main>`;
     return;
   }
-  const views = { admin: viewAdmin, directory: viewDirectory, home: viewHome, schedule: viewSchedule, calendar: viewCalendar, notes: viewNotes, team: viewTeam, member: viewMember, absence: viewAbsence, profile: viewProfile };
+  const views = { admin: viewAdmin, directory: viewDirectory, home: viewHome, schedule: viewSchedule, calendar: viewCalendar, notes: viewNotes, team: viewTeam, member: viewMember, absence: viewAbsence, docs: viewDocs, profile: viewProfile };
   const active = ["notes","team","member","admin"].includes(S.view) ? (S.stack[0]?.view || "home") : S.view;
   const demoBar = DEMO ? `<div class="demo"><span><strong>Demo mode.</strong> Sample people and dates; nothing is saved to SharePoint. Add your app's client ID in the configuration to connect the Serving Schedule list.</span></div>` : "";
   app.innerHTML = header + `<main><div class="wrap">${demoBar}${views[S.view]()}</div></main>
@@ -1511,7 +1640,7 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act, item = S.items.find(i => i.id === b.dataset.id);
   switch(act){
-    case "tab": S.stack = []; S.absenceDone = false; S.absConfirm = null; S.notesEdit = null; S.annEdit = false; S.annConfirm = null; go(b.dataset.view, null, false); break;
+    case "tab": S.stack = []; S.absenceDone = false; S.absConfirm = null; if (b.dataset.view === "docs" && S.docs) S.docs.items = null; S.notesEdit = null; S.annEdit = false; S.annConfirm = null; go(b.dataset.view, null, false); break;
     case "notes-edit": S.notesEdit = S.arg; render(); setTimeout(() => $("#notes-editor")?.focus(), 0); break;
     case "notes-cancel": S.notesEdit = null; render(); break;
     case "fmt": {
@@ -1582,6 +1711,32 @@ document.addEventListener("click", async e => {
     case "theme": toggleTheme(); break;
     case "accept": setStatus(item, true); break;
     case "abs-cancel": S.absConfirm = b.dataset.id; render(); break;
+    case "docs-refresh": if (S.docs) docsLoad(); break;
+    case "docs-open-folder": S.docs.path.push(b.dataset.name); S.docs.items = null; render(); break;
+    case "docs-up": S.docs.path = S.docs.path.slice(0, Number(b.dataset.n)); S.docs.items = null; render(); break;
+    case "docs-new": {
+      if (!isEditor()) break;
+      const kind = b.dataset.kind, label = { docx: "Word document", xlsx: "spreadsheet", pptx: "slide deck" }[kind];
+      const name = (prompt(`Name for the new ${label}:`, "") || "").trim().replace(/[\\/:*?"<>|#%]/g, "");
+      if (!name) break;
+      try {
+        S.docs.busy = "Creating…"; render();
+        const blob = await fetch(`templates/blank.${kind}?v=${APP_VERSION}`).then(r => { if (!r.ok) throw new Error("template missing"); return r.blob(); });
+        const it = await API.docsUpload(S.docs.path, name.toLowerCase().endsWith("." + kind) ? name : `${name}.${kind}`, blob);
+        S.docs.busy = ""; await docsLoad();
+        if (it && it.webUrl && it.webUrl !== "#") window.open(it.webUrl, "_blank", "noopener");
+      } catch(err){ S.docs.busy = ""; toast("Couldn't create it. " + err.message, true); render(); }
+      break;
+    }
+    case "docs-folder": {
+      if (!isEditor()) break;
+      const name = (prompt("Name for the new folder:", "") || "").trim().replace(/[\\/:*?"<>|#%]/g, "");
+      if (!name) break;
+      try { await API.docsFolderAdd(S.docs.path, name); toast(`Folder added: ${name}`); await docsLoad(); }
+      catch(err){ toast("Couldn't add the folder. " + err.message, true); }
+      break;
+    }
+    case "docs-open-file": if (DEMO){ e.preventDefault(); toast("Demo mode: documents open in Word, Excel or PowerPoint when connected."); } break;
     case "abs-cancel-keep": S.absConfirm = null; render(); break;
     case "abs-cancel-yes": {
       if (!item || !isAbsent(item) || !mine(item)) break;
@@ -1782,6 +1937,7 @@ document.addEventListener("change", async e => {
     annDraftSave(); S.annDraft.file = e.target.files[0];
     S.annDraft.preview = URL.createObjectURL(e.target.files[0]); render(); return;
   }
+  if (e.target.id === "docs-file"){ if (isEditor()) docsAdd([...e.target.files]); return; }
   if (e.target.id !== "pf-photo" || !e.target.files[0]) return;
   const p = myProfile(); if (!p) return;
   toast("Uploading photo…");
