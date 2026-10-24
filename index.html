@@ -132,6 +132,7 @@ h1.greet{font-family:var(--display);font-weight:700;font-size:clamp(30px,8vw,40p
 .admin-top .pill{flex:none}
 .admin-row.locked select{opacity:.55}
 .name-pick{display:flex;align-items:center;gap:10px}
+.card-who{min-width:0;flex:1}
 .name-pick select{flex:1;min-width:0}
 .av.face{width:36px;height:36px;font-size:12px}
 .av.face.empty{border:2px dashed var(--line);background:transparent}
@@ -282,7 +283,9 @@ form.stack{display:flex;flex-direction:column;gap:14px}
 .trash-btn svg{width:18px;height:18px}
 .ns-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .add-people-btn{width:100%;justify-content:center;background:transparent;border:2px solid var(--accent);color:var(--accent);font-weight:700}
-.add-ask .actions{display:flex;gap:8px;flex-wrap:wrap}
+.no-svc-ask.add-ask{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+.no-svc-ask.add-ask .btn.yes{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.no-svc-ask.add-ask select{flex:1 1 160px;min-width:0}
 #cat-pick{min-width:0;flex:1}
 .cue.abs .when{padding:6px 4px}
 .cue.abs .cue-body{padding:10px 14px;justify-content:center}
@@ -440,7 +443,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "11";
+const APP_VERSION = "12";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -723,7 +726,9 @@ const LiveAPI = {
   /* Upload an image to the site's Site Assets library (where SharePoint keeps image-column files) and return the column value. */
   async assetImage(listId, fileName, blob){
     const drives = await this.g(`/sites/${this.siteId}/drives?$select=id,name,webUrl`);
-    const assets = drives.value.find(d => /\/SiteAssets$/i.test(d.webUrl)) || drives.value.find(d => /site assets/i.test(d.name));
+    const assets = drives.value.find(d => /\/SiteAssets$/i.test(d.webUrl)) || drives.value.find(d => /site assets/i.test(d.name))
+      // Graph leaves the system Site Assets library out of /drives; ask for it by name instead.
+      || await this.g(`/sites/${this.siteId}/lists/${encodeURIComponent("Site Assets")}/drive?$select=id,name,webUrl`).catch(() => null);
     if (!assets) throw new Error("Couldn't find the site's Site Assets library.");
     const up = await this.g(`/drives/${assets.id}/root:/Lists/${listId}/${fileName}:/content`, {
       method: "PUT", headers: { "Content-Type": "image/jpeg" }, body: blob });
@@ -1540,18 +1545,35 @@ function faceFor(personId, fullName){
   const prof = (personId && S.items.find(i => isProfile(i) && i.personId === personId)) || personForName(fullName)?.profile;
   return prof ? avatar(prof, "face") : `<span class="av face empty" aria-hidden="true"></span>`;
 }
-/* One Position per card, picked from the Leadership, Singing and Music choices (saved to that column; the other two are cleared). */
+/* One Position per card (saved to its column; the other two position columns are cleared). */
 function posValue(i){
   const ps = i.positions || [];
   if (ps.length !== 1) return ps.length ? "__keep" : "";
   const g = (S.servingGroups || []).find(g => g.choices.includes(ps[0]));
   return g ? `${g.col}|${ps[0]}` : "__keep";
 }
+/* Position groups for a card: Singers and Musicians. Someone tagged only with singing roles on the Roster sees only
+   Singers; only musician roles, only Musicians; both or neither, both. Leadership shows only for people with a leader role. */
+function posGroups(i){
+  const all = S.servingGroups || [], g = c => all.find(x => x.col === c);
+  const sing = g("SingingPositions"), mus = g("MusicianPositions"), lead = g("LeaderPositions");
+  const prof = profileOf(i) || (i.fullName ? S.items.find(p => isProfile(p) && lc(p.fullName) === lc(i.fullName)) : null);
+  const roles = prof?.positions || [];
+  const hasS = sing && roles.some(r => sing.choices.includes(r)), hasM = mus && roles.some(r => mus.choices.includes(r));
+  const leadRoles = lead ? roles.filter(r => lead.choices.includes(r)) : [];
+  const out = [];
+  if (leadRoles.length) out.push({ col: lead.col, label: "Leadership", choices: leadRoles });
+  if (sing && (hasS || !hasM)) out.push({ col: sing.col, label: "Singers", choices: sing.choices });
+  if (mus && (hasM || !hasS)) out.push({ col: mus.col, label: "Musicians", choices: mus.choices });
+  return out;
+}
 function posSelect(i, sid, dis){
-  const cur = posValue(i), groups = S.servingGroups || [];
+  const cur = posValue(i), groups = posGroups(i);
+  const inList = !cur || cur === "__keep" || groups.some(g => cur === `${g.col}|${cur.split("|")[1]}` && g.choices.includes(cur.split("|")[1]));
+  const extra = inList ? "" : `<option value="${esc(cur)}" selected>${esc(cur.split("|")[1])}</option>`;
   return `<select id="ad-pos-${sid}" data-f="Position" data-init="${esc(cur)}" ${dis}>
     <option value="" ${cur === "" ? "selected" : ""}>— Choose a position —</option>
-    ${cur === "__keep" ? `<option value="__keep" selected>${esc(i.role)}</option>` : ""}
+    ${cur === "__keep" ? `<option value="__keep" selected>${esc(i.role)}</option>` : ""}${extra}
     ${groups.map(g => `<optgroup label="${esc(g.label)}">${g.choices.map(c => { const v = `${g.col}|${c}`; return `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(c)}</option>`; }).join("")}</optgroup>`).join("")}
   </select>`;
 }
@@ -1626,13 +1648,10 @@ function adminAddPeople(k, dayRows){
   const wd = fromKey(k).toLocaleDateString("en-US", { weekday: "long" });
   const choices = serviceChoices();
   if (!S.addCat || !choices.includes(S.addCat)) S.addCat = cats[0] || choices.find(c => c.startsWith(wd)) || choices[0] || "";
-  return `<div class="panel stack add-ask">
-      <b>Add ${todo.length} ${todo.length === 1 ? "person" : "people"} to ${esc(fmtShort(k))}?</b>
-      <span class="hint">One card for each team member${absent ? " (anyone absent that day is left out)" : ""}, with no position yet, so you can choose each one. Published stays “--”, so no one is asked until you publish them.</span>
-      ${cats.length ? `<span class="hint">Service Category: <b>${esc(cats.join(" · "))}</b></span>`
-        : `<div class="field"><label for="add-cat">Service Category</label><select id="add-cat">${choices.map(c => `<option ${c === S.addCat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>`}
-      <div class="actions"><button class="btn blue" data-act="add-people-yes" data-date="${k}" ${S.addBusy ? "disabled" : ""}>${S.addBusy ? esc(S.addBusy) : "Yes, Add People"}</button>
-        <button class="btn" data-act="add-people-keep" ${S.addBusy ? "disabled" : ""}>Cancel</button></div></div>`;
+  return `<div class="no-svc-ask add-ask"><span>Add ${todo.length} ${todo.length === 1 ? "person" : "people"} to ${esc(fmtShort(k))}?</span>
+    ${cats.length ? "" : `<select id="add-cat" aria-label="Service Category">${choices.map(c => `<option ${c === S.addCat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`}
+    <button class="btn yes" data-act="add-people-yes" data-date="${k}" ${S.addBusy ? "disabled" : ""}>${S.addBusy ? esc(S.addBusy) : "Yes, Add People"}</button>
+    <button class="btn" data-act="add-people-keep" ${S.addBusy ? "disabled" : ""}>Cancel</button></div>`;
 }
 /* People who sent an absence for this date (Absence tab), so admins don't schedule them. */
 function adminAbsent(rows){
@@ -1670,17 +1689,14 @@ function viewAdmin(){
     const dis = locked ? "disabled" : "";
     return `<form class="panel admin-row ${locked ? "locked" : ""}" data-id="${sid}">
       <div class="admin-top">
-        <div class="admin-title"><b>${esc(i.role || "No position")}</b><span class="sub" style="margin:0">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span>
-</div>
+        <div class="name-pick card-who"><span data-face>${faceFor(i.personId, i.fullName)}</span>
+          <div class="admin-title"><b>${esc(i.fullName || "Not assigned")}</b><span class="sub" style="margin:0">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span></div></div>
         <div class="admin-side">${statusPill(i)}<button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${sid}" aria-label="Delete this position" title="Delete position">${ICON.trash}</button>${locked
           ? `<button class="iconbtn notes-btn" type="button" data-act="admin-unlock" data-id="${sid}" aria-label="Edit this assignment" title="Edit">${ICON.pencil}</button>`
           : saveIcon()}</div>
       </div>
       <div class="admin-grid">
         <div class="field wide"><label for="ad-pos-${sid}">Position</label>${posSelect(i, sid, dis)}</div>
-        <div class="field wide"><label for="ad-name-${sid}">Full Name</label>
-          <div class="name-pick"><span data-face>${faceFor(i.personId, i.fullName)}</span><select id="ad-name-${sid}" data-f="FullName" ${dis}>${opts(S.names, i.fullName, "— Not assigned —")}</select></div>
-          <input type="hidden" data-f="NameEmailLookupId" value="${esc(i.personId || "")}"><span class="hint warn-text" data-who>${whoWarn(i.personId, i.fullName)}</span></div>
         <div class="field wide"><label for="ad-pub-${sid}">Published</label><select id="ad-pub-${sid}" data-f="Published" ${dis}>${opts((S.choices || {}).published, i.published, "—")}</select></div>
       </div>
       ${S.rowDel === i.id ? `<div class="confirm-row">Delete ${esc(i.role || "this position")}${i.fullName ? ` (${esc(i.fullName)})` : ""} on ${esc(fmtShort(i.date))}?
@@ -1689,7 +1705,7 @@ function viewAdmin(){
     </form>`;
   }).join("");
   return `${backBar("Edit Schedule")}
-    <ol class="panel steps"><li>Choose a name from the drop down menu.</li><li>Change the status to <b>"Published"</b> and hit the <span class="inline-check" aria-label="check">${ICON.check}</span> to save.</li></ol>
+    <ol class="panel steps"><li>Choose a Position from the drop down menu.</li><li>Change the status to <b>"Published"</b> and hit the <span class="inline-check" aria-label="check">${ICON.check}</span> to save.</li></ol>
     <div class="date-chips" role="group" aria-label="Service dates">${chips}${adminPickChip()}</div>
     ${adminPickField()}
     ${adminDayHeader(k, dayRows)}
@@ -2047,8 +2063,8 @@ document.addEventListener("submit", async e => {
   }
   if (e.target.classList.contains("admin-row")){
     const item = S.items.find(i => i.id === e.target.dataset.id); if (!item) return;
-    const get = f => e.target.querySelector(`[data-f="${f}"]`).value;
-    const fields = {}, next = { fullName: get("FullName"), personId: get("NameEmailLookupId"), published: get("Published") };
+    const get = (f, dflt) => { const el = e.target.querySelector(`[data-f="${f}"]`); return el ? el.value : dflt; };
+    const fields = {}, next = { fullName: get("FullName", item.fullName), personId: get("NameEmailLookupId", item.personId), published: get("Published") };
     if (next.fullName !== item.fullName) fields.FullName = next.fullName || null;
     if (next.personId !== item.personId) fields.NameEmailLookupId = next.personId ? String(next.personId) : null;
     if (next.published !== item.published) fields.Published = next.published || null;
