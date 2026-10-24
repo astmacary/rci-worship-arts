@@ -467,7 +467,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "18";
+const APP_VERSION = "19";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1584,7 +1584,8 @@ function personForName(name){
 }
 /* Round photo of whoever is picked in Full Name (initials until the photo loads; a blank circle when nobody is picked). */
 function faceFor(personId, fullName){
-  const prof = (personId && S.items.find(i => isProfile(i) && i.personId === personId)) || personForName(fullName)?.profile;
+  const prof = (personId && S.items.find(i => isProfile(i) && i.personId === personId)) || personForName(fullName)?.profile
+    || (fullName ? S.items.find(i => isProfile(i) && lc(i.fullName) === lc(fullName)) : null);
   return prof ? avatar(prof, "face") : `<span class="av face empty" aria-hidden="true"></span>`;
 }
 /* One Position per card (saved to its column; the other two position columns are cleared). */
