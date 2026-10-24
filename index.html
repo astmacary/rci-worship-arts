@@ -282,10 +282,12 @@ form.stack{display:flex;flex-direction:column;gap:14px}
 .trash-btn{color:var(--bad)}
 .trash-btn svg{width:18px;height:18px}
 .ns-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.add-people-btn{width:100%;justify-content:center;background:transparent;border:2px solid var(--accent);color:var(--accent);font-weight:700}
-.no-svc-ask.add-ask{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
-.no-svc-ask.add-ask .btn.yes{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.no-svc-ask.add-ask select{flex:1 1 160px;min-width:0}
+.tpl-btn{width:100%;justify-content:center;background:transparent;border:2px solid var(--accent);color:var(--accent);font-weight:700;margin-top:8px}
+.tpl-ask{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--r);padding:10px 14px;font-weight:600;margin-top:8px}
+.tpl-ask .btn{padding:6px 12px}
+.tpl-ask .yes{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.tpl-ask select{flex:1 1 160px;min-width:0}
+
 #cat-pick{min-width:0;flex:1}
 .cue.abs .when{padding:6px 4px}
 .cue.abs .cue-body{padding:10px 14px;justify-content:center}
@@ -443,7 +445,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "12";
+const APP_VERSION = "13";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1644,14 +1646,17 @@ function adminAddPeople(k, dayRows){
   const cats = [...new Set(svc.map(i => i.category))];
   const absent = dayRows.filter(isAbsent).length;
   if (!todo.length) return "";
-  if (S.addAsk !== k) return `<button class="btn add-people-btn" data-act="add-people" data-date="${k}">+ Add People</button>`;
+  if (S.addAsk !== k) return `<button class="btn tpl-btn" data-act="add-people" data-date="${k}">＋ Add People</button>`;
   const wd = fromKey(k).toLocaleDateString("en-US", { weekday: "long" });
   const choices = serviceChoices();
   if (!S.addCat || !choices.includes(S.addCat)) S.addCat = cats[0] || choices.find(c => c.startsWith(wd)) || choices[0] || "";
-  return `<div class="no-svc-ask add-ask"><span>Add ${todo.length} ${todo.length === 1 ? "person" : "people"} to ${esc(fmtShort(k))}?</span>
-    ${cats.length ? "" : `<select id="add-cat" aria-label="Service Category">${choices.map(c => `<option ${c === S.addCat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`}
-    <button class="btn yes" data-act="add-people-yes" data-date="${k}" ${S.addBusy ? "disabled" : ""}>${S.addBusy ? esc(S.addBusy) : "Yes, Add People"}</button>
-    <button class="btn" data-act="add-people-keep" ${S.addBusy ? "disabled" : ""}>Cancel</button></div>`;
+  // Same box as Productions' "＋ Add Positions" confirm.
+  const all = !dayRows.some(i => i.fullName && !isAbsent(i));
+  const what = all ? `the ${todo.length} people` : `the ${todo.length} people not on this date yet`;
+  return `<div class="tpl-ask"><span>Add ${what} to ${esc(fmtShort(k))}${cats.length ? ` as ${esc(cats[0])}` : ""}?</span>
+      ${cats.length ? "" : `<select id="add-cat" aria-label="Service Category">${choices.map(c => `<option ${c === S.addCat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`}
+      <button class="btn yes" data-act="add-people-yes" data-date="${k}" ${S.addBusy ? "disabled" : ""}>${S.addBusy ? esc(S.addBusy) : "Yes, add them"}</button>
+      <button class="btn" data-act="add-people-keep" ${S.addBusy ? "disabled" : ""}>Cancel</button></div>`;
 }
 /* People who sent an absence for this date (Absence tab), so admins don't schedule them. */
 function adminAbsent(rows){
