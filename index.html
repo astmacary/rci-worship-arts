@@ -433,7 +433,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "8";
+const APP_VERSION = "9";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1079,7 +1079,7 @@ async function docsLoad(){
   const D = S.docs; D.loading = true; D.error = ""; render();
   try {
     const list = await API.docsList(D.path);
-    D.items = list.sort((a, b) => (docPin(b) - docPin(a)) || (!!b.folder - !!a.folder) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+    D.items = list.sort((a, b) => (docPin(b) - docPin(a)) || (!!a.folder - !!b.folder) || a.name.localeCompare(b.name, undefined, { numeric: true }));
   } catch(e){ D.items = []; D.error = e.message || String(e); }
   D.loading = false; render();
 }
@@ -1105,7 +1105,8 @@ function viewDocs(){
         <label class="btn" for="docs-file" style="cursor:pointer">Upload File</label><input id="docs-file" type="file" multiple hidden>
         <button class="btn" data-act="docs-folder">New Folder</button></div>
       ${D.busy ? `<span class="hint">${esc(D.busy)}</span>` : ""}</section>` : "";
-  return `<div class="page-h"><h1>Team Documents</h1><span style="flex:1"></span><button class="iconbtn" data-act="docs-refresh" aria-label="Refresh" title="Refresh">${ICON.refresh}</button></div>
+  const back = D.path.length ? `<div class="page-h"><button class="back" data-act="docs-up" data-n="${D.path.length - 1}">${ICON.back}Back</button></div>` : "";
+  return `${back}<div class="page-h"><h1>${esc(D.path.length ? D.path[D.path.length - 1] : "Team Documents")}</h1><span style="flex:1"></span><button class="iconbtn" data-act="docs-refresh" aria-label="Refresh" title="Refresh">${ICON.refresh}</button></div>
     ${path}
     <p class="sub doc-tip" style="margin-top:-6px">Tap a document to read it here. To make changes, tap <b>Edit</b>; it opens in Word, Excel or PowerPoint, where everyone on the team can edit and you'll see who else is in it.</p>
     ${D.loading && !D.items ? `<div class="empty">Loading documents…</div>`
