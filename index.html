@@ -2133,9 +2133,12 @@ document.addEventListener("submit", async e => {
     }
     const btn = e.target.querySelector('button[type="submit"]');
     if (!Object.keys(fields).length){ btn.disabled = true; return; }
-    // Any change to a position sends it back to Pending, so the person confirms again.
-    if (item.status !== "Pending"){ fields.Status = "Pending"; }
-    next.status = "Pending";
+    // Published decides Status when it's changed to Request Approved (Accepted) or Request Declined (Declined).
+    // Any other change sends it back to Pending, so the person confirms again.
+    const pubStatus = { "request approved": "Accepted", [lc(CONFIG.publishedDenied)]: "Declined" }[lc(next.published || "")];
+    const newStatus = (fields.Published !== undefined && pubStatus) ? pubStatus : (fields.Published === undefined && pubStatus ? item.status : "Pending");
+    if (item.status !== newStatus) fields.Status = newStatus;
+    next.status = newStatus;
     btn.disabled = true; btn.classList.add("busy");
     try {
       await API.updateAssignment(item.id, fields);
