@@ -278,6 +278,12 @@ form.stack{display:flex;flex-direction:column;gap:14px}
 .abs-cal .dcell.sent{background:var(--bad-soft);color:var(--bad);opacity:1}
 .chip.sent{background:var(--bad-soft);color:var(--bad);border-color:transparent}
 .absent-list{margin:0}
+.trash-btn{color:var(--bad)}
+.trash-btn svg{width:18px;height:18px}
+.ns-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.add-people{align-self:flex-start}
+.add-ask .actions{display:flex;gap:8px;flex-wrap:wrap}
+#cat-pick{min-width:0;flex:1}
 .cue.abs .when{padding:6px 4px}
 .cue.abs .cue-body{padding:10px 14px;justify-content:center}
 .abs-grid{display:flex;align-items:center;gap:10px}
@@ -422,6 +428,7 @@ const CONFIG = {
   // "Places I Serve" on the profile row edits these two multi-choice columns.
   servingCols: [["LeaderPositions", "Leadership", true], ["SingingPositions", "Singing"], ["MusicianPositions", "Music"]],   // true = one choice only
   absentCategory: "Absent",
+  addPeopleSkip: ["Ashley St Macary", "Ashley St. Macary"],   // Full Names left out of "Add People"
   docsFolder: "RCI Worship Team Documents",   // folder in the site's Documents library shown on the Docs tab (everyone edits; admins add)
   docsPinned: ["Worship Set List"],            // always listed first (matched by name, without the extension)
   likesCol: "TeamLikes_x002c_LovesandMore_x00",   // "Team Likes, Loves and More..." (Roster rows; each person edits their own)
@@ -433,7 +440,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "9";
+const APP_VERSION = "10";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -471,6 +478,7 @@ const ICON = {
   chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/><path d="M8.5 11h7M8.5 14.5h4.5"/></svg>',
   folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
   docs:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7z"/><path d="M15 3v4h4"/><path d="M9 21h10a2 2 0 0 0 2-2V9"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14M10 11v6M14 11v6"/></svg>',
   pin:'<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M16 3a1 1 0 0 1 .7 1.7L15 6.4v4.3l2.7 2.7a1 1 0 0 1-.7 1.7h-4v5.4a1 1 0 0 1-2 0v-5.4H7a1 1 0 0 1-.7-1.7L9 10.7V6.4L7.3 4.7A1 1 0 0 1 8 3z"/></svg>',
   refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
@@ -645,6 +653,18 @@ const LiveAPI = {
       body: JSON.stringify({ name, folder: {}, "@microsoft.graph.conflictBehavior": "rename" }) });
   },
   async deleteItem(id){ await this.g(`/sites/${this.siteId}/lists/${CONFIG.listId}/items/${id}`, { method: "DELETE" }); },
+  /* Adds many rows (Graph $batch, 20 per call); returns their ids in order (null where one failed). */
+  async addItems(list){
+    const out = [];
+    for (let n = 0; n < list.length; n += 20){
+      const part = list.slice(n, n + 20);
+      const r = await this.g(`/$batch`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requests: part.map((f, j) => ({
+        id: String(j), method: "POST", url: `/sites/${this.siteId}/lists/${CONFIG.listId}/items`, headers: { "Content-Type": "application/json" }, body: { fields: f } })) }) });
+      const byId = {}; (r.responses || []).forEach(x => byId[x.id] = x);
+      part.forEach((_, j) => { const x = byId[String(j)]; out.push(x && x.status < 300 && x.body ? String(x.body.id) : null); });
+    }
+    return out;
+  },
   /* Adds a row with the given fields; returns its id. */
   async addItem(f){
     const r = await this.g(`/sites/${this.siteId}/lists/${CONFIG.listId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: f }) });
@@ -831,6 +851,7 @@ const DemoAPI = {
   async docsUpload(sub, name){ const it = { id: "d" + Date.now(), name, file: {}, webUrl: "#", lastModifiedDateTime: new Date().toISOString(), lastModifiedBy: { user: { displayName: S.me.name, email: S.me.emails[0] } } }; (this._docs[sub.join("/")] ||= []).push(it); return it; },
   async docsDelete(id){ Object.values(this._docs).forEach(a => { const n = a.findIndex(x => x.id === id); if (n >= 0) a.splice(n, 1); }); },
   async docsFolderAdd(sub, name){ const it = { id: "f" + Date.now(), name, folder: { childCount: 0 }, lastModifiedDateTime: new Date().toISOString(), lastModifiedBy: { user: { displayName: S.me.name, email: S.me.emails[0] } } }; (this._docs[sub.join("/")] ||= []).push(it); return it; },
+  async addItems(list){ await new Promise(r => setTimeout(r, 300)); return list.map(() => "d" + Date.now() + Math.random().toString(36).slice(2, 7)); },
   async addItem(){ await new Promise(r => setTimeout(r, 150)); return "d" + Date.now() + Math.random().toString(36).slice(2, 6); },
   async postMessage(to, text){ return { id: "d" + Date.now(), toId: String(to.id), text, fromName: S.me.name, fromEmail: S.me.emails[0], at: new Date().toISOString() }; },
   async deleteMessage(){},
@@ -1534,7 +1555,7 @@ function whoHtml(personId, fullName){
 /* ---------- Edit Schedule: No Service days and the day's Service Category ---------- */
 const isNoService = i => lc(i.category || "") === lc(CONFIG.noServiceCategory);
 const svcFilled = v => !!v && String(v).trim() !== "" && String(v).trim() !== "--";
-const NOT_A_SERVICE = ["--", "🎂 Birthday", "Absent", "Declined", "No Show", "No Response"];
+const NOT_A_SERVICE = ["--", "🎂 Birthday", "Birthday", "Absent", "Declined", "No Show", "No Response"];
 function serviceChoices(){
   const all = (S.categories && S.categories.length) ? S.categories
     : ["Sunday Morning", "Sunday Evening", "Monday Night", "Tuesday Night", "Wednesday Night", "Thursday Night", "Friday Night", "Funeral"];
@@ -1547,7 +1568,8 @@ function adminDayHeader(k, rows){
   let cat = "";
   if (S.catEdit === k && svc.length){
     const cur = cats.length === 1 ? cats[0] : "";
-    cat = `<form class="cat-form field" id="catForm" data-date="${k}" data-cur="${esc(cur)}"><input id="cat-pick" type="text" maxlength="80" autocomplete="off" value="${esc(cur)}" placeholder="Type the Service Category" aria-label="Service Category">
+    const choices = [...new Set([...serviceChoices(), ...(cur ? [cur] : [])])];
+    cat = `<form class="cat-form field" id="catForm" data-date="${k}" data-cur="${esc(cur)}"><select id="cat-pick" aria-label="Service Category">${cur ? "" : `<option value="">Choose a Service Category</option>`}${choices.map(c => `<option ${c === cur ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
       <button class="iconbtn notes-btn save-btn" type="submit" disabled aria-label="Save Service Category" title="Save">${ICON.check}</button>
       <button class="linkbtn" type="button" data-act="cat-cancel">Cancel</button></form>`;
   } else if (svc.length){
@@ -1557,11 +1579,44 @@ function adminDayHeader(k, rows){
 }
 /* The No Service notice (at the top of the day's roster), or the red button that marks the day. */
 function adminNoService(k, rows){
-  if (rows.some(isNoService)) return `<div class="no-service" style="margin:0"><span aria-hidden="true">❌</span> No Service</div>`;
+  const ns = rows.find(isNoService);
+  if (ns){
+    if (S.noSvcDel === ns.id) return `<div class="no-svc-ask"><span>Remove No Service from ${esc(fmtShort(k))}?</span>
+      <button class="btn yes" data-act="no-service-del-yes" data-id="${esc(ns.id)}" ${S.noSvcBusy ? "disabled" : ""}>${S.noSvcBusy ? "Removing…" : "Yes, Remove"}</button>
+      <button class="btn" data-act="no-service-del-keep" ${S.noSvcBusy ? "disabled" : ""}>Cancel</button></div>`;
+    return `<div class="no-service ns-row" style="margin:0"><span><span aria-hidden="true">❌</span> No Service</span>
+      <button class="iconbtn trash-btn" type="button" data-act="no-service-del" data-id="${esc(ns.id)}" aria-label="Remove No Service" title="Remove No Service">${ICON.trash}</button></div>`;
+  }
   if (S.noSvcAsk === k) return `<div class="no-svc-ask"><span>Mark ${esc(fmtShort(k))} as No Service?</span>
     <button class="btn yes" data-act="no-service-yes" data-date="${k}" ${S.noSvcBusy ? "disabled" : ""}>${S.noSvcBusy ? "Saving…" : "Yes, No Service"}</button>
     <button class="btn" data-act="no-service-keep" ${S.noSvcBusy ? "disabled" : ""}>Cancel</button></div>`;
   return `<button class="btn no-svc-btn" data-act="no-service" data-date="${k}">❌ Mark ${esc(fmtShort(k))} as No Service</button>`;
+}
+/* "Add People": one schedule row per Full Name (minus CONFIG.addPeopleSkip) on this date, skipping anyone
+   already on it or absent that day. Positions come from each person's Roster row; Published is left at "--". */
+function addPeopleList(k, dayRows){
+  const have = new Set(dayRows.filter(i => i.fullName).map(i => lc(i.fullName)));
+  const skip = new Set((CONFIG.addPeopleSkip || []).map(lc));
+  return (S.names || []).filter(n => n && n !== "--" && !/^choice \d+$/i.test(n) && !skip.has(lc(n)) && !have.has(lc(n)));
+}
+function adminAddPeople(k, dayRows){
+  if (dayRows.some(isNoService)) return "";
+  const todo = addPeopleList(k, dayRows);
+  const svc = dayRows.filter(i => !isNoService(i) && !isAbsent(i) && svcFilled(i.category));
+  const cats = [...new Set(svc.map(i => i.category))];
+  const absent = dayRows.filter(isAbsent).length;
+  if (!todo.length) return "";
+  if (S.addAsk !== k) return `<button class="btn blue add-people" data-act="add-people" data-date="${k}">+ Add People</button>`;
+  const wd = fromKey(k).toLocaleDateString("en-US", { weekday: "long" });
+  const choices = serviceChoices();
+  if (!S.addCat || !choices.includes(S.addCat)) S.addCat = cats[0] || choices.find(c => c.startsWith(wd)) || choices[0] || "";
+  return `<div class="panel stack add-ask">
+      <b>Add ${todo.length} ${todo.length === 1 ? "person" : "people"} to ${esc(fmtShort(k))}?</b>
+      <span class="hint">One position for each team member${absent ? " (anyone absent that day is left out)" : ""}, with their roles from the Roster. Published stays “--”, so no one is asked until you publish them.</span>
+      ${cats.length ? `<span class="hint">Service Category: <b>${esc(cats.join(" · "))}</b></span>`
+        : `<div class="field"><label for="add-cat">Service Category</label><select id="add-cat">${choices.map(c => `<option ${c === S.addCat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>`}
+      <div class="actions"><button class="btn blue" data-act="add-people-yes" data-date="${k}" ${S.addBusy ? "disabled" : ""}>${S.addBusy ? esc(S.addBusy) : "Yes, Add People"}</button>
+        <button class="btn" data-act="add-people-keep" ${S.addBusy ? "disabled" : ""}>Cancel</button></div></div>`;
 }
 /* People who sent an absence for this date (Absence tab), so admins don't schedule them. */
 function adminAbsent(rows){
@@ -1601,7 +1656,7 @@ function viewAdmin(){
       <div class="admin-top">
         <div class="admin-title"><b>${esc(i.role || "No position")}</b><span class="sub" style="margin:0">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span>
 </div>
-        <div class="admin-side">${statusPill(i)}${locked
+        <div class="admin-side">${statusPill(i)}<button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${sid}" aria-label="Delete this position" title="Delete position">${ICON.trash}</button>${locked
           ? `<button class="iconbtn notes-btn" type="button" data-act="admin-unlock" data-id="${sid}" aria-label="Edit this assignment" title="Edit">${ICON.pencil}</button>`
           : saveIcon()}</div>
       </div>
@@ -1611,6 +1666,9 @@ function viewAdmin(){
           <input type="hidden" data-f="NameEmailLookupId" value="${esc(i.personId || "")}"><span class="hint warn-text" data-who>${whoWarn(i.personId, i.fullName)}</span></div>
         <div class="field wide"><label for="ad-pub-${sid}">Published</label><select id="ad-pub-${sid}" data-f="Published" ${dis}>${opts((S.choices || {}).published, i.published, "—")}</select></div>
       </div>
+      ${S.rowDel === i.id ? `<div class="confirm-row">Delete ${esc(i.role || "this position")}${i.fullName ? ` (${esc(i.fullName)})` : ""} on ${esc(fmtShort(i.date))}?
+        <button type="button" class="btn decline-soft" data-act="row-del-yes" data-id="${sid}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Deleting…" : "Yes, Delete"}</button>
+        <button type="button" class="btn" data-act="row-del-keep">Keep It</button></div>` : ""}
     </form>`;
   }).join("");
   return `${backBar("Edit Schedule")}
@@ -1620,6 +1678,7 @@ function viewAdmin(){
     ${adminDayHeader(k, dayRows)}
     ${adminNoService(k, dayRows)}
     ${adminAbsent(dayRows)}
+    ${adminAddPeople(k, dayRows)}
     ${rows.length ? `<div class="list">${cards}</div>` : `<div class="empty">Nothing else is scheduled on this date.</div>`}`;
 }
 
@@ -1744,9 +1803,68 @@ document.addEventListener("click", async e => {
       const f = $("#admin-pick"); if (f){ f.focus(); try { f.showPicker(); } catch(_){} }
       break;
     }
-    case "cat-edit": S.catEdit = b.dataset.date; render(); { const f = $("#cat-pick"); if (f){ f.focus(); f.select(); } } break;
+    case "cat-edit": S.catEdit = b.dataset.date; render(); $("#cat-pick")?.focus(); break;
     case "cat-cancel": S.catEdit = null; render(); break;
     case "no-service": S.noSvcAsk = b.dataset.date; render(); break;
+    case "no-service-del": S.noSvcDel = b.dataset.id; render(); break;
+    case "no-service-del-keep": S.noSvcDel = null; render(); break;
+    case "no-service-del-yes": {
+      if (!isEditor() || S.noSvcBusy || !item || !isNoService(item)) break;
+      S.noSvcBusy = true; render();
+      try { await API.deleteItem(item.id); S.items = S.items.filter(i => i.id !== item.id); toast(`No Service removed from ${fmtShort(item.date)}`); }
+      catch(err){ toast("Couldn't remove it. " + err.message, true); }
+      S.noSvcBusy = false; S.noSvcDel = null; render(); break;
+    }
+    case "row-del": S.rowDel = b.dataset.id; render(); break;
+    case "row-del-keep": S.rowDel = null; render(); break;
+    case "row-del-yes": {
+      if (!isEditor() || !item || isProfile(item)) break;
+      S.busy.add(item.id); render();
+      try { await API.deleteItem(item.id); S.items = S.items.filter(i => i.id !== item.id); toast(`Deleted: ${item.role || "position"}${item.fullName ? `, ${item.fullName}` : ""}`); }
+      catch(err){ toast("Couldn't delete it. " + err.message, true); }
+      S.busy.delete(item.id); S.rowDel = null; render(); updateBadge(); break;
+    }
+    case "add-people": S.addAsk = b.dataset.date; S.addCat = null; render(); break;
+    case "add-people-keep": S.addAsk = null; render(); break;
+    case "add-people-yes": {
+      if (!isEditor() || S.addBusy) break;
+      const k = b.dataset.date, dayRows = S.items.filter(i => !isProfile(i) && i.date === k);
+      const absentNames = new Set(dayRows.filter(isAbsent).map(i => lc(i.fullName)));
+      const names = addPeopleList(k, dayRows).filter(n => !absentNames.has(lc(n)));
+      const cats = [...new Set(dayRows.filter(i => !isNoService(i) && !isAbsent(i) && svcFilled(i.category)).map(i => i.category))];
+      const cat = cats[0] || $("#add-cat")?.value || S.addCat;
+      if (!cat){ toast("Choose a Service Category first.", true); break; }
+      const rows = names.map(n => {
+        const who = personForName(n), prof = who?.profile && isProfile(who.profile) ? who.profile : S.items.find(i => isProfile(i) && lc(i.fullName) === lc(n));
+        const f = { ServiceDate: toSp(k), ServiceCategory: cat, FullName: n, Status: "Pending" };
+        if (who?.id) f.NameEmailLookupId = String(who.id);
+        if (prof){
+          const raw = prof.positions || [];
+          const groups = S.servingGroups || [];
+          CONFIG.positionCols.forEach(c => {
+            const g = groups.find(x => x.col === c), vals = raw.filter(v => g ? g.choices.includes(v) : false);
+            if (!vals.length) return;
+            if (g && g.single) f[c] = vals[0]; else { f[c + "@odata.type"] = "Collection(Edm.String)"; f[c] = vals; }
+          });
+        }
+        return { f, who, prof };
+      });
+      S.addBusy = `Adding ${rows.length}…`; render();
+      try {
+        const ids = await API.addItems(rows.map(r => r.f));
+        let ok = 0;
+        ids.forEach((id, n) => {
+          if (!id) return; ok++;
+          const r = rows[n], f = r.f;
+          const it = normalize(id, { ...f, ServiceDate: undefined });
+          Object.assign(it, { date: k, category: cat, fullName: f.FullName, personId: r.who?.id || "", email: r.who?.profile?.email || r.prof?.email || "", status: "Pending", published: "--" });
+          S.items.push(it);
+        });
+        toast(ok === rows.length ? `Added ${ok} people to ${fmtShort(k)}` : `Added ${ok} of ${rows.length}; try Add People again for the rest.`, ok !== rows.length);
+        S.addAsk = null;
+      } catch(err){ toast("Couldn't add people. " + err.message, true); }
+      S.addBusy = ""; render(); break;
+    }
     case "no-service-keep": S.noSvcAsk = null; render(); break;
     case "no-service-yes": {
       if (!isEditor() || S.noSvcBusy) break;
@@ -1758,7 +1876,7 @@ document.addEventListener("click", async e => {
       } catch(err){ toast("Couldn't mark it. " + err.message, true); }
       S.noSvcBusy = false; render(); break;
     }
-    case "admin-date": S.catEdit = null; S.noSvcAsk = null; S.pickOpen = false; S.adminDate = b.dataset.date; render(); document.querySelector(`[data-act="admin-date"][data-date="${S.adminDate}"]`)?.scrollIntoView({ inline: "center", block: "nearest" }); break;
+    case "admin-date": S.catEdit = null; S.noSvcAsk = null; S.noSvcDel = null; S.rowDel = null; S.addAsk = null; S.pickOpen = false; S.adminDate = b.dataset.date; render(); document.querySelector(`[data-act="admin-date"][data-date="${S.adminDate}"]`)?.scrollIntoView({ inline: "center", block: "nearest" }); break;
     case "ann-edit": S.annEdit = !S.annEdit; S.annConfirm = null; if (!S.annEdit) S.annDraft = null; render(); break;
     case "ann-ask": S.annConfirm = Number(b.dataset.id); render(); break;
     case "ann-change": {
@@ -1990,7 +2108,8 @@ document.addEventListener("submit", async e => {
 });
 
 document.addEventListener("input", e => {
-  if (e.target.id === "cat-pick"){ const f = e.target.form, v = e.target.value.trim(); f.querySelector(".save-btn").disabled = !v || v === f.dataset.cur; return; } if (e.target.id === "ab-notes") absState().notes = e.target.value; });
+  if (e.target.id === "cat-pick"){ const f = e.target.form, v = e.target.value.trim(); f.querySelector(".save-btn").disabled = !v || v === f.dataset.cur; return; }
+  if (e.target.id === "add-cat"){ S.addCat = e.target.value; return; } if (e.target.id === "ab-notes") absState().notes = e.target.value; });
 
 /* Remember where the cursor was in the notes editor, so the formatting buttons apply there. */
 let notesRange = null;
