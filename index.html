@@ -133,6 +133,8 @@ h1.greet{font-family:var(--display);font-weight:700;font-size:clamp(30px,8vw,40p
 .admin-row.locked select{opacity:.55}
 .name-pick{display:flex;align-items:center;gap:10px}
 .card-who{min-width:0;flex:1}
+.role-sec{display:flex;flex-direction:column;gap:8px}
+.role-sec + .role-sec{margin-top:6px}
 .name-pick select{flex:1;min-width:0}
 .av.face{width:36px;height:36px;font-size:12px}
 .av.face.empty{border:2px dashed var(--line);background:transparent}
@@ -445,7 +447,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "13";
+const APP_VERSION = "14";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1398,7 +1400,7 @@ function viewTeam(){
   const k = S.arg;
   const list = assignments().filter(i => i.date === k && approved(i)).sort((x, y) => Number(x.id) - Number(y.id));
   return `${backBar("Serving Team")}<p class="sub" style="margin-top:-12px">${esc(fmtLong(k))}</p>
-    ${list.length ? `<div class="roster">${list.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`
+    ${list.length ? sectioned(list, part => `<div class="roster">${part.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`)
       : `<div class="empty">No one is confirmed for this date yet.</div>`}`;
 }
 
@@ -1556,18 +1558,43 @@ function posValue(i){
 }
 /* Position groups for a card: Singers and Musicians. Someone tagged only with singing roles on the Roster sees only
    Singers; only musician roles, only Musicians; both or neither, both. Leadership shows only for people with a leader role. */
+/* Singers / Musicians: each person's options are only the singing and musician roles tagged on their Roster row
+   (Leadership roles are never offered). Someone with no singing or musician roles tagged sees both full lists. */
+function rosterOf(i){
+  return profileOf(i) || (i.fullName ? S.items.find(p => isProfile(p) && lc(p.fullName) === lc(i.fullName)) : null);
+}
 function posGroups(i){
   const all = S.servingGroups || [], g = c => all.find(x => x.col === c);
-  const sing = g("SingingPositions"), mus = g("MusicianPositions"), lead = g("LeaderPositions");
-  const prof = profileOf(i) || (i.fullName ? S.items.find(p => isProfile(p) && lc(p.fullName) === lc(i.fullName)) : null);
-  const roles = prof?.positions || [];
-  const hasS = sing && roles.some(r => sing.choices.includes(r)), hasM = mus && roles.some(r => mus.choices.includes(r));
-  const leadRoles = lead ? roles.filter(r => lead.choices.includes(r)) : [];
+  const sing = g("SingingPositions"), mus = g("MusicianPositions");
+  const roles = rosterOf(i)?.positions || [];
+  const ts = sing ? sing.choices.filter(c => roles.includes(c)) : [], tm = mus ? mus.choices.filter(c => roles.includes(c)) : [];
   const out = [];
-  if (leadRoles.length) out.push({ col: lead.col, label: "Leadership", choices: leadRoles });
-  if (sing && (hasS || !hasM)) out.push({ col: sing.col, label: "Singers", choices: sing.choices });
-  if (mus && (hasM || !hasS)) out.push({ col: mus.col, label: "Musicians", choices: mus.choices });
+  if (!ts.length && !tm.length){
+    if (sing) out.push({ col: sing.col, label: "Singers", choices: sing.choices });
+    if (mus) out.push({ col: mus.col, label: "Musicians", choices: mus.choices });
+    return out;
+  }
+  if (ts.length) out.push({ col: sing.col, label: "Singers", choices: ts });
+  if (tm.length) out.push({ col: mus.col, label: "Musicians", choices: tm });
   return out;
+}
+/* Which header a person goes under: by the position on the row (singing → Singers, musician → Musicians);
+   with no such position yet, by their Roster roles (singing roles first). Untagged people go under "Not Tagged". */
+function sectionOf(i){
+  const all = S.servingGroups || [], g = c => all.find(x => x.col === c);
+  const sing = g("SingingPositions")?.choices || [], mus = g("MusicianPositions")?.choices || [];
+  const ps = i.positions || [];
+  if (ps.some(x => sing.includes(x))) return "Singers";
+  if (ps.some(x => mus.includes(x))) return "Musicians";
+  const roles = rosterOf(i)?.positions || [];
+  if (roles.some(x => sing.includes(x))) return "Singers";
+  if (roles.some(x => mus.includes(x))) return "Musicians";
+  return "Not Tagged";
+}
+const SECTIONS = ["Singers", "Musicians", "Not Tagged"];
+function sectioned(list, html){
+  return SECTIONS.map(h => { const part = list.filter(i => sectionOf(i) === h); return part.length
+    ? `<section class="role-sec"><h2 class="section-label">${h} <span class="count">${part.length}</span></h2>${html(part)}</section>` : ""; }).join("");
 }
 function posSelect(i, sid, dis){
   const cur = posValue(i), groups = posGroups(i);
@@ -1688,7 +1715,7 @@ function viewAdmin(){
   const dayRows = S.items.filter(i => !isProfile(i) && i.date === k);
   const rows = dayRows.filter(i => !isNoService(i) && !isAbsent(i)).sort((x, y) => Number(x.id) - Number(y.id));   // same order as the SharePoint list
   const chips = dates.map(d => { const x = fromKey(d); return `<button class="date-chip ${d === k ? "on" : ""}" data-act="admin-date" data-date="${d}" aria-pressed="${d === k}"><span>${x.toLocaleDateString(undefined,{weekday:"short"})}</span><b>${x.getDate()}</b><span>${x.toLocaleDateString(undefined,{month:"short"})}</span></button>`; }).join("");
-  const cards = rows.map(i => {
+  const card = i => {
     const sid = esc(i.id);
     const locked = i.status === "Accepted" && !(S.adminUnlocked || new Set()).has(i.id);
     const dis = locked ? "disabled" : "";
@@ -1708,7 +1735,7 @@ function viewAdmin(){
         <button type="button" class="btn decline-soft" data-act="row-del-yes" data-id="${sid}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Deleting…" : "Yes, Delete"}</button>
         <button type="button" class="btn" data-act="row-del-keep">Keep It</button></div>` : ""}
     </form>`;
-  }).join("");
+  };
   return `${backBar("Edit Schedule")}
     <ol class="panel steps"><li>Choose a Position from the drop down menu.</li><li>Change the status to <b>"Published"</b> and hit the <span class="inline-check" aria-label="check">${ICON.check}</span> to save.</li></ol>
     <div class="date-chips" role="group" aria-label="Service dates">${chips}${adminPickChip()}</div>
@@ -1717,7 +1744,7 @@ function viewAdmin(){
     ${adminNoService(k, dayRows)}
     ${adminAbsent(dayRows)}
     ${adminAddPeople(k, dayRows)}
-    ${rows.length ? `<div class="list">${cards}</div>` : `<div class="empty">Nothing else is scheduled on this date.</div>`}`;
+    ${rows.length ? sectioned(rows, part => `<div class="list">${part.map(card).join("")}</div>`) : `<div class="empty">Nothing else is scheduled on this date.</div>`}`;
 }
 
 /* ---------- red badge on the app icon for pending requests ---------- */
