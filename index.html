@@ -447,7 +447,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "16";
+const APP_VERSION = "17";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -535,6 +535,7 @@ function normalize(id, f, emailById){
     phone: f.PhoneNumber || "",
     photoRaw: f.Photo || "",
     likes: f[CONFIG.likesCol] || "",
+    active: f.ActiveStatus || "",
     serving: CONFIG.servingCols.flatMap(([c]) => Array.isArray(f[c]) ? f[c] : (f[c] ? [f[c]] : []))
   };
 }
@@ -590,7 +591,7 @@ const LiveAPI = {
         if (email && email.includes("@")) users.push({ id: String(u.id), email: lc(email), name: u.fields.Title || email });
       });
     } catch(e){ console.warn("Could not read User Information List; matching by name instead.", e); }
-    const sel = `Title,ServiceDate,ServiceCategory,CallTime,ServiceTime,FullName,NameEmailLookupId,Status,Published,Notes,Birthday,Photo,PhoneNumber,LeaderPositions,SingingPositions,MusicianPositions,TimeOffDate,${CONFIG.likesCol}`;
+    const sel = `Title,ServiceDate,ServiceCategory,CallTime,ServiceTime,FullName,NameEmailLookupId,Status,Published,Notes,Birthday,Photo,PhoneNumber,LeaderPositions,SingingPositions,MusicianPositions,TimeOffDate,ActiveStatus,${CONFIG.likesCol}`;
     const rows = await this.all(`${base}/${CONFIG.listId}/items?$expand=fields($select=${sel})&$top=500`);
     let names = [], servingChoices = [], choices = {};
     try {
@@ -1329,7 +1330,7 @@ function viewCalendar(){
   }
   const ev = eventsOn(sel);
   const dayCats = [...new Set(ev.a.map(i => (i.category || "").trim()).filter(Boolean))].join(" · ");
-  const team = ev.a.map(i => tile(i, i.role, "member-of", i.id)).join("");
+  const team = calSections(ev.a);
   const bdayRows = ev.b.map(p => {
     const canChat = wallOpen(p) && myProfile()?.id !== p.id;
     return canChat
@@ -1349,7 +1350,7 @@ function viewCalendar(){
         ${isEditor() ? `<button class="iconbtn notes-btn" data-act="admin-open" data-date="${sel}" aria-label="Edit this day's schedule" title="Edit schedule">${ICON.pencil}</button>` : ""}</div>
       ${ev.none ? `<div class="no-service"><span aria-hidden="true">❌</span> No Service</div>` : ""}
       ${bdayRows ? `<div class="list" style="margin-bottom:10px">${bdayRows}</div>` : ""}
-      ${team ? `<div class="roster">${team}</div>` : (bdayRows || ev.none ? "" : `<div class="empty">No events scheduled.</div>`)}
+      ${team ? team : (bdayRows || ev.none ? "" : `<div class="empty">No events scheduled.</div>`)}
     </section>`;
 }
 
@@ -1609,6 +1610,20 @@ function sectionOf(i){
   return "Not Tagged";
 }
 const SECTIONS = ["Singers", "Musicians", "Not Tagged"];
+/* Calendar day roster: Worship Leaders (position Worship Leader, or a Leadership position), Singers, Musicians. */
+function calSection(i){
+  const ps = i.positions || [], lead = (S.servingGroups || []).find(g => g.col === "LeaderPositions")?.choices || [];
+  if (ps.includes("Worship Leader") || ps.some(x => lead.includes(x))) return "Worship Leaders";
+  const s = sectionOf(i);
+  return s === "Not Tagged" ? "Others" : s;
+}
+function calSections(list){
+  return ["Worship Leaders", "Singers", "Musicians", "Others"].map(h => {
+    const part = list.filter(i => calSection(i) === h);
+    return part.length ? `<section class="role-sec"><h2 class="section-label">${h} <span class="count">${part.length}</span></h2>
+      <div class="roster">${part.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div></section>` : "";
+  }).join("");
+}
 function sectioned(list, html){
   return SECTIONS.map(h => { const part = list.filter(i => sectionOf(i) === h); return part.length
     ? `<section class="role-sec"><h2 class="section-label">${h} <span class="count">${part.length}</span></h2>${html(part)}</section>` : ""; }).join("");
@@ -1920,7 +1935,17 @@ document.addEventListener("click", async e => {
         const who = personForName(n), prof = who?.profile && isProfile(who.profile) ? who.profile : S.items.find(i => isProfile(i) && lc(i.fullName) === lc(n));
         const f = { ServiceDate: toSp(k), ServiceCategory: cat, FullName: n, Status: "Pending" };
         if (who?.id) f.NameEmailLookupId = String(who.id);
-        return { f, who, prof };
+        // Active musicians (Roster "Active Status" = Active) with exactly one musician role tagged are scheduled
+        // straight away in that role, confirmed. Absent people never reach this list.
+        const musChoices = (S.servingGroups || []).find(g => g.col === "MusicianPositions")?.choices || [];
+        const mus = (prof?.positions || []).filter(r => musChoices.includes(r));
+        let auto = null;
+        if (prof && lc(prof.active) === "active" && mus.length === 1){
+          auto = mus[0];
+          f["MusicianPositions@odata.type"] = "Collection(Edm.String)"; f.MusicianPositions = [auto];
+          f.Status = "Accepted"; f.Published = "Request Approved";
+        }
+        return { f, who, prof, auto };
       });
       S.addBusy = `Adding ${rows.length}…`; render();
       try {
@@ -1930,10 +1955,12 @@ document.addEventListener("click", async e => {
           if (!id) return; ok++;
           const r = rows[n], f = r.f;
           const it = normalize(id, { ...f, ServiceDate: undefined });
-          Object.assign(it, { date: k, category: cat, fullName: f.FullName, personId: r.who?.id || "", email: r.who?.profile?.email || r.prof?.email || "", status: "Pending", published: "--" });
+          Object.assign(it, { date: k, category: cat, fullName: f.FullName, personId: r.who?.id || "", email: r.who?.profile?.email || r.prof?.email || "",
+            status: r.auto ? "Accepted" : "Pending", published: r.auto ? "Request Approved" : "--", positions: r.auto ? [r.auto] : [], role: r.auto || "" });
           S.items.push(it);
         });
-        toast(ok === rows.length ? `Added ${ok} people to ${fmtShort(k)}` : `Added ${ok} of ${rows.length}; try Add People again for the rest.`, ok !== rows.length);
+        const autoN = rows.filter((r, n) => r.auto && ids[n]).length;
+        toast(ok === rows.length ? `Added ${ok} people to ${fmtShort(k)}${autoN ? ` (${autoN} musician${autoN > 1 ? "s" : ""} confirmed)` : ""}` : `Added ${ok} of ${rows.length}; try Add People again for the rest.`, ok !== rows.length);
         S.addAsk = null;
       } catch(err){ toast("Couldn't add people. " + err.message, true); }
       S.addBusy = ""; render(); break;
