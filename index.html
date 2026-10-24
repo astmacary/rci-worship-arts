@@ -133,6 +133,26 @@ h1.greet{font-family:var(--display);font-weight:700;font-size:clamp(30px,8vw,40p
 .admin-row.locked select{opacity:.55}
 .name-pick{display:flex;align-items:center;gap:10px}
 .card-who{min-width:0;flex:1}
+/* Edit Schedule tiles */
+.admin-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:8px}
+.admin-tile{padding:8px;gap:6px;min-width:0}
+.tile-bar{display:flex;align-items:center;justify-content:space-between;gap:4px;min-width:0}
+.tile-bar .pill{font-size:10.5px;padding:2px 7px;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tile-btns{display:flex;gap:4px;flex:none}
+.tile-btns .iconbtn{width:28px;height:28px}
+.tile-btns .iconbtn svg{width:14px;height:14px}
+.tile-who{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;min-width:0}
+.tile-who .av.face{width:52px;height:52px;font-size:16px}
+.tile-name{font-size:14.5px;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tile-sub{font-size:11.5px;color:var(--muted);line-height:1.2}
+.tile-fields{display:flex;flex-direction:column;gap:5px}
+.tile-f{display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile-f > span{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.tile-f select{width:100%;min-width:0;padding:5px 8px;min-height:34px;font-size:13px}
+.admin-tile.locked select{opacity:.55}
+.admin-tile.locked .tile-who .av{opacity:.7}
+.tile-confirm{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--bad);background:var(--bad-soft);border-radius:8px;padding:8px}
+.tile-confirm .btn{justify-content:center;padding:6px 8px}
 .role-sec{display:flex;flex-direction:column;gap:8px}
 .role-sec + .role-sec{margin-top:6px}
 .name-pick select{flex:1;min-width:0}
@@ -447,7 +467,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "17";
+const APP_VERSION = "18";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1751,19 +1771,20 @@ function viewAdmin(){
     const sid = esc(i.id);
     const locked = i.status === "Accepted" && !(S.adminUnlocked || new Set()).has(i.id);
     const dis = locked ? "disabled" : "";
-    return `<form class="panel admin-row ${locked ? "locked" : ""}" data-id="${sid}">
-      <div class="admin-top">
-        <div class="name-pick card-who"><span data-face>${faceFor(i.personId, i.fullName)}</span>
-          <div class="admin-title"><b>${esc(i.fullName || "Not assigned")}</b><span class="sub" style="margin:0">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span></div></div>
-        <div class="admin-side">${statusPill(i)}<button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${sid}" aria-label="Delete this position" title="Delete position">${ICON.trash}</button>${locked
+    // Compact tile (several side by side, like the Calendar roster): status + delete + save on top,
+    // photo and name in the middle, then Position and Published.
+    return `<form class="panel admin-row admin-tile ${locked ? "locked" : ""}" data-id="${sid}">
+      <div class="tile-bar">${statusPill(i)}<span class="tile-btns"><button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${sid}" aria-label="Delete this position" title="Delete position">${ICON.trash}</button>${locked
           ? `<button class="iconbtn notes-btn" type="button" data-act="admin-unlock" data-id="${sid}" aria-label="Edit this assignment" title="Edit">${ICON.pencil}</button>`
-          : saveIcon()}</div>
+          : saveIcon()}</span></div>
+      <div class="tile-who"><span data-face>${faceFor(i.personId, i.fullName)}</span>
+        <b class="tile-name">${esc(i.fullName || "Not assigned")}</b>
+        <span class="tile-sub">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span></div>
+      <div class="tile-fields">
+        <label class="tile-f"><span>Position</span>${posSelect(i, sid, dis)}</label>
+        <label class="tile-f"><span>Published</span><select id="ad-pub-${sid}" data-f="Published" ${dis}>${opts((S.choices || {}).published, i.published, "—")}</select></label>
       </div>
-      <div class="admin-grid">
-        <div class="field wide"><label for="ad-pos-${sid}">Position</label>${posSelect(i, sid, dis)}</div>
-        <div class="field wide"><label for="ad-pub-${sid}">Published</label><select id="ad-pub-${sid}" data-f="Published" ${dis}>${opts((S.choices || {}).published, i.published, "—")}</select></div>
-      </div>
-      ${S.rowDel === i.id ? `<div class="confirm-row">Delete ${esc(i.role || "this position")}${i.fullName ? ` (${esc(i.fullName)})` : ""} on ${esc(fmtShort(i.date))}?
+      ${S.rowDel === i.id ? `<div class="tile-confirm">Delete ${esc(i.role || "this position")}${i.fullName ? ` (${esc(i.fullName)})` : ""}?
         <button type="button" class="btn decline-soft" data-act="row-del-yes" data-id="${sid}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Deleting…" : "Yes, Delete"}</button>
         <button type="button" class="btn" data-act="row-del-keep">Keep It</button></div>` : ""}
     </form>`;
@@ -1776,7 +1797,7 @@ function viewAdmin(){
     ${adminNoService(k, dayRows)}
     ${adminAbsent(dayRows)}
     ${adminAddPeople(k, dayRows)}
-    ${rows.length ? sectioned(rows, part => `<div class="list">${part.map(card).join("")}</div>`) : `<div class="empty">Nothing else is scheduled on this date.</div>`}`;
+    ${rows.length ? sectioned(rows, part => `<div class="admin-tiles">${part.map(card).join("")}</div>`) : `<div class="empty">Nothing else is scheduled on this date.</div>`}`;
 }
 
 /* ---------- red badge on the app icon for pending requests ---------- */
