@@ -156,6 +156,16 @@ h1.greet{font-family:var(--display);font-weight:700;font-size:clamp(30px,8vw,40p
 .tile-confirm{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--bad);background:var(--bad-soft);border-radius:8px;padding:8px}
 .tile-confirm .btn{justify-content:center;padding:6px 8px}
 .role-sec{display:flex;flex-direction:column;gap:8px}
+.sec-head{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;padding:2px 0;color:inherit;cursor:pointer;text-align:left;font:inherit}
+.sec-head .section-label{margin:0;flex:1}
+.sec-chev{display:grid;place-items:center;color:var(--muted);flex:none}
+.sec-chev svg{width:16px;height:16px;transform:rotate(90deg);transition:transform .15s}
+.sec-head[aria-expanded="false"] .sec-chev svg{transform:none}
+.sub-sec{padding-left:10px;border-left:2px solid var(--line)}
+.sub-sec .section-label{font-size:13px}
+.tile.abs-tile{border-color:var(--bad);background:var(--bad-soft)}
+.tile.abs-tile small{color:var(--bad)}
+
 .role-sec + .role-sec{margin-top:6px}
 .name-pick select{flex:1;min-width:0}
 .av.face{width:36px;height:36px;font-size:12px}
@@ -470,7 +480,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "23";
+const APP_VERSION = "24";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1368,7 +1378,7 @@ function viewCalendar(){
         <button class="iconbtn" data-act="cal-next" aria-label="Next month">${ICON.next}</button></div>
       <div class="grid7">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(x=>`<div class="dowh">${x}</div>`).join("")}${cells}</div>
     </section>
-    <section><div class="day-h"><div class="day-t"><h2 class="section-label">${esc(fmtLong(sel))}</h2>${dayCats ? `<div class="day-cat">${esc(dayCats)}</div>` : ""}</div>
+    <section><div class="day-h"><div class="day-t"><h2 class="section-label">${esc(fmtLong(sel))}</h2></div>
         ${hasNotes ? `<button class="iconbtn notes-btn" data-act="notes" data-date="${sel}" aria-label="Worship Notes for this day" title="Worship Notes">${ICON.notes}</button>` : ""}
         ${isEditor() ? `<button class="iconbtn notes-btn" data-act="admin-open" data-date="${sel}" aria-label="Edit this day's schedule" title="Edit schedule">${ICON.pencil}</button>` : ""}</div>
       ${ev.none ? `<div class="no-service"><span aria-hidden="true">❌</span> No Service</div>` : ""}
@@ -1440,7 +1450,7 @@ function viewTeam(){
   const k = S.arg;
   const list = assignments().filter(i => i.date === k && approved(i)).sort((x, y) => Number(x.id) - Number(y.id));
   return `${backBar("Serving Team")}<p class="sub" style="margin-top:-12px">${esc(fmtLong(k))}</p>
-    ${list.length ? sectioned(list, part => `<div class="roster">${part.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`)
+    ${list.length ? sectioned(list, part => `<div class="roster">${part.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`, "team")
       : `<div class="empty">No one is confirmed for this date yet.</div>`}`;
 }
 
@@ -1646,11 +1656,22 @@ function calSection(i){
 function calSections(list){
   return ["Worship Leaders", "Singers", "Musicians", "Others"].map(h => {
     const part = list.filter(i => calSection(i) === h);
-    return part.length ? `<section class="role-sec"><h2 class="section-label">${h} <span class="count">${part.length}</span></h2>
-      <div class="roster">${part.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div></section>` : "";
+    const body = p => `<div class="roster">${p.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`;
+    return part.length ? secBlock(`cal:${h}`, h, part.length, h === "Singers" ? singersBody(part, body, "cal") : body(part)) : "";
   }).join("");
 }
-function sectioned(list, html){
+/* Singers split by voice part: the position on the row if it's Soprano/Alto/Tenor, otherwise their Roster tag (first of the three). */
+const VOICES = ["Soprano", "Alto", "Tenor"];
+function voiceOf(i){
+  const ps = i.positions || [], roles = rosterOf(i)?.positions || [];
+  return VOICES.find(v => ps.includes(v)) || VOICES.find(v => roles.includes(v)) || "";
+}
+function singersBody(part, html, scope){
+  const groups = VOICES.map(v => [v, part.filter(i => voiceOf(i) === v)]).filter(([, p]) => p.length);
+  const rest = part.filter(i => !voiceOf(i));
+  return groups.map(([v, p]) => secBlock(`${scope}:Singers:${v}`, v, p.length, html(p), true)).join("") + (rest.length ? html(rest) : "");
+}
+function sectioned(list, html, scope = "admin"){
   // Confirmed people first; Singers are then A–Z by name, other sections keep list order.
   const order = new Map(list.map((i, n) => [i.id, n]));
   const ranked = list.slice().sort((a, b) => (approved(b) - approved(a)) || (order.get(a.id) - order.get(b.id)));
@@ -1659,7 +1680,7 @@ function sectioned(list, html){
   const noSingersYet = !list.some(i => sectionOf(i) === "Singers" && approved(i));
   const heads = noSingersYet ? SECTIONS.map(h => h === "Singers" ? "Musicians" : h === "Musicians" ? "Singers" : h) : SECTIONS;
   return heads.map(h => { const part = ranked.filter(i => sectionOf(i) === h); if (h === "Singers") part.sort(byName); return part.length
-    ? `<section class="role-sec"><h2 class="section-label">${h} <span class="count">${part.length}</span></h2>${html(part)}</section>` : ""; }).join("");
+    ? secBlock(`${scope}:${h}`, h, part.length, h === "Singers" ? singersBody(part, html, scope) : html(part)) : ""; }).join("");
 }
 function posSelect(i, sid, dis){
   const cur = posValue(i), groups = posGroups(i);
@@ -1753,16 +1774,22 @@ function adminAddPeople(k, dayRows){
       <button class="btn" data-act="add-people-keep" ${S.addBusy ? "disabled" : ""}>Cancel</button></div>`;
 }
 /* People who sent an absence for this date (Absence tab), so admins don't schedule them. */
+/* Collapsible section headings (Edit Schedule and Calendar). Closed ones are remembered on this device. */
+const SEC_KEY = "rci-sec-closed:" + location.pathname;
+function secClosed(){
+  if (!S.secClosedSet){ try { S.secClosedSet = new Set(JSON.parse(localStorage.getItem(SEC_KEY) || "[]")); } catch(_){ S.secClosedSet = new Set(); } }
+  return S.secClosedSet;
+}
+function secBlock(key, label, n, body, sub){
+  const closed = secClosed().has(key);
+  return `<section class="role-sec${sub ? " sub-sec" : ""}"><button type="button" class="sec-head" data-act="sec-toggle" data-sec="${esc(key)}" aria-expanded="${!closed}"><h2 class="section-label">${esc(label)} <span class="count">${n}</span></h2><span class="sec-chev" aria-hidden="true">${ICON.next}</span></button>${closed ? "" : body}</section>`;
+}
 function adminAbsent(rows){
   const abs = rows.filter(isAbsent);
   if (!abs.length) return "";
-  const firsts = abs.map(i => firstOf(i.fullName));
-  return `<section class="role-sec"><h2 class="section-label">Absent <span class="count">${abs.length}</span></h2>
-    <div class="admin-tiles">${abs.map(i => `<div class="panel admin-tile abs-tile">
-      <div class="tile-bar"><span class="pill bad">ABSENT</span></div>
-      <div class="tile-who"><span>${faceFor(i.personId, i.fullName)}</span>
-        <b class="tile-name">${esc(i.fullName || "Someone")}</b>
-        <span class="tile-sub">${esc(fmtShort(i.date))}</span></div></div>`).join("")}</div></section>`;
+  // Same tiles as the Calendar roster, tinted red.
+  return secBlock("admin:Absent", "Absent/Unavailable", abs.length,
+    `<div class="roster">${abs.map(i => `<div class="tile abs-tile">${avatar(i)}<span class="meta"><b>${esc(i.fullName || "Someone")}</b><small>Absent</small></span></div>`).join("")}</div>`);
 }
 /* A date chip that opens a date picker, for days that aren't on the schedule yet. */
 function adminPickChip(){
@@ -2107,6 +2134,7 @@ document.addEventListener("click", async e => {
       } catch(err){ toast("Couldn't cancel your time off. " + err.message, true); }
       S.busy.delete(item.id); S.absConfirm = null; render(); break;
     }
+    case "sec-toggle": { const set = secClosed(), k = b.dataset.sec; set.has(k) ? set.delete(k) : set.add(k); try { localStorage.setItem(SEC_KEY, JSON.stringify([...set])); } catch(_){} render(); break; }
     case "ask-decline": S.confirm = item.id; render(); break;
     case "decline": setStatus(item, false); break;
     case "cancel": S.confirm = null; render(); break;
