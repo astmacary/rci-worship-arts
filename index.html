@@ -527,7 +527,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "30";
+const APP_VERSION = "31";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1714,7 +1714,7 @@ function sectionOf(i){
   if (roles.some(x => mus.includes(x))) return "Musicians";
   return "Not Tagged";
 }
-const SECTIONS = ["Worship Leaders", "Singers", "Musicians", "Not Tagged", "N/S"];
+const SECTIONS = ["Musicians", "Singers", "Worship Leaders", "Not Tagged", "N/S"];   // A–Z; the catch-all groups stay last
 /* Calendar day roster: Worship Leaders (position Worship Leader, or a Leadership position), Singers, Musicians. */
 function calSection(i){
   const ps = i.positions || [], lead = (S.servingGroups || []).find(g => g.col === "LeaderPositions")?.choices || [];
@@ -1723,17 +1723,18 @@ function calSection(i){
   return s === "Not Tagged" ? "Others" : s;
 }
 function calSections(list){
-  return ["Worship Leaders", "Singers", "Musicians", "Others"].map(h => {
+  return ["Musicians", "Singers", "Worship Leaders", "Others"].map(h => {   // A–Z, Others last
     const part = list.filter(i => calSection(i) === h);
     const body = p => `<div class="roster">${p.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`;
     return part.length ? secBlock(`cal:${h}`, h, part.length, h === "Singers" ? singersBody(part, body, "cal") : body(part)) : "";
   }).join("");
 }
 /* Singers split by voice part: the position on the row if it's Soprano/Alto/Tenor, otherwise their Roster tag (first of the three). */
-const VOICES = ["Soprano", "Alto", "Tenor"];
+const VOICES = ["Alto", "Soprano", "Tenor"];   // A–Z
 function voiceOf(i){
   const ps = i.positions || [], roles = rosterOf(i)?.positions || [];
-  return VOICES.find(v => ps.includes(v)) || VOICES.find(v => roles.includes(v)) || "";
+  const pri = ["Soprano", "Alto", "Tenor"];   // which voice wins when several are tagged (unchanged)
+  return pri.find(v => ps.includes(v)) || pri.find(v => roles.includes(v)) || "";
 }
 function singersBody(part, html, scope){
   const groups = VOICES.map(v => [v, part.filter(i => voiceOf(i) === v)]).filter(([, p]) => p.length);
@@ -1745,9 +1746,7 @@ function sectioned(list, html, scope = "admin"){
   const order = new Map(list.map((i, n) => [i.id, n]));
   const ranked = list.slice().sort((a, b) => (approved(b) - approved(a)) || (order.get(a.id) - order.get(b.id)));
   const byName = (a, b) => (approved(b) - approved(a)) || (a.fullName || "").localeCompare(b.fullName || "");
-  // With no confirmed singers yet, Musicians come before Singers.
-  const noSingersYet = !list.some(i => sectionOf(i) === "Singers" && approved(i));
-  const heads = noSingersYet ? SECTIONS.map(h => h === "Singers" ? "Musicians" : h === "Musicians" ? "Singers" : h) : SECTIONS;
+  const heads = SECTIONS;   // A–Z
   return heads.map(h => { const part = ranked.filter(i => sectionOf(i) === h); if (h === "Singers") part.sort(byName); return part.length
     ? secBlock(`${scope}:${h}`, h, part.length, h === "Singers" ? singersBody(part, html, scope) : html(part)) : ""; }).join("");
 }
