@@ -368,6 +368,11 @@ form.stack{display:flex;flex-direction:column;gap:14px}
 .tpl-ask .btn{padding:6px 12px}
 .tpl-ask .yes{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .tpl-ask select{flex:1 1 160px;min-width:0}
+.tpl-btns{display:flex;gap:8px}
+.tpl-btns .tpl-btn{flex:1 1 0;min-width:0;padding-inline:8px}
+.guest-form .guest-title{flex:1 1 100%}
+.guest-form input[type=text],.guest-form select{flex:1 1 100%;min-width:0;font-weight:500;min-height:38px;padding:7px 10px;font-size:15px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px}
+.guest-form .guest-btns{display:flex;gap:8px;flex:1 1 100%}
 
 #cat-pick{min-width:0;flex:1}
 .cue.abs .when{padding:6px 4px}
@@ -1714,7 +1719,7 @@ function sectionOf(i){
   if (roles.some(x => mus.includes(x))) return "Musicians";
   return "Not Tagged";
 }
-const SECTIONS = ["Musicians", "Singers", "Worship Leaders", "Not Tagged", "N/S"];   // A–Z; the catch-all groups stay last
+const SECTIONS = ["Worship Leaders", "Singers", "Musicians", "Not Tagged", "N/S"];
 /* Calendar day roster: Worship Leaders (position Worship Leader, or a Leadership position), Singers, Musicians. */
 function calSection(i){
   const ps = i.positions || [], lead = (S.servingGroups || []).find(g => g.col === "LeaderPositions")?.choices || [];
@@ -1723,30 +1728,33 @@ function calSection(i){
   return s === "Not Tagged" ? "Others" : s;
 }
 function calSections(list){
-  return ["Musicians", "Singers", "Worship Leaders", "Others"].map(h => {   // A–Z, Others last
-    const part = list.filter(i => calSection(i) === h);
+  return ["Worship Leaders", "Singers", "Musicians", "Others"].map(h => {
+    const part = list.filter(i => calSection(i) === h).sort(nameCmp);
     const body = p => `<div class="roster">${p.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`;
     return part.length ? secBlock(`cal:${h}`, h, part.length, h === "Singers" ? singersBody(part, body, "cal") : body(part)) : "";
   }).join("");
 }
 /* Singers split by voice part: the position on the row if it's Soprano/Alto/Tenor, otherwise their Roster tag (first of the three). */
-const VOICES = ["Alto", "Soprano", "Tenor"];   // A–Z
+const VOICES = ["Soprano", "Alto", "Tenor"];
 function voiceOf(i){
   const ps = i.positions || [], roles = rosterOf(i)?.positions || [];
-  const pri = ["Soprano", "Alto", "Tenor"];   // which voice wins when several are tagged (unchanged)
-  return pri.find(v => ps.includes(v)) || pri.find(v => roles.includes(v)) || "";
+  return VOICES.find(v => ps.includes(v)) || VOICES.find(v => roles.includes(v)) || "";
 }
 function singersBody(part, html, scope){
   const groups = VOICES.map(v => [v, part.filter(i => voiceOf(i) === v)]).filter(([, p]) => p.length);
   const rest = part.filter(i => !voiceOf(i));
   return groups.map(([v, p]) => secBlock(`${scope}:Singers:${v}`, v + "s", p.length, html(p), true)).join("") + (rest.length ? html(rest) : "");
 }
+/* A–Z by Full Name; cards with no name yet go last. */
+const nameCmp = (a, b) => (!a.fullName - !b.fullName) || (a.fullName || "").localeCompare(b.fullName || "");
 function sectioned(list, html, scope = "admin"){
   // Confirmed people first; Singers are then A–Z by name, other sections keep list order.
   const order = new Map(list.map((i, n) => [i.id, n]));
-  const ranked = list.slice().sort((a, b) => (approved(b) - approved(a)) || (order.get(a.id) - order.get(b.id)));
-  const byName = (a, b) => (approved(b) - approved(a)) || (a.fullName || "").localeCompare(b.fullName || "");
-  const heads = SECTIONS;   // A–Z
+  const ranked = list.slice().sort((a, b) => nameCmp(a, b) || (order.get(a.id) - order.get(b.id)));   // A–Z by name in every section
+  const byName = nameCmp;
+  // With no confirmed singers yet, Musicians come before Singers.
+  const noSingersYet = !list.some(i => sectionOf(i) === "Singers" && approved(i));
+  const heads = noSingersYet ? SECTIONS.map(h => h === "Singers" ? "Musicians" : h === "Musicians" ? "Singers" : h) : SECTIONS;
   return heads.map(h => { const part = ranked.filter(i => sectionOf(i) === h); if (h === "Singers") part.sort(byName); return part.length
     ? secBlock(`${scope}:${h}`, h, part.length, h === "Singers" ? singersBody(part, html, scope) : html(part)) : ""; }).join("");
 }
@@ -1833,8 +1841,10 @@ function adminAddPeople(k, dayRows){
   const svc = dayRows.filter(i => !isNoService(i) && !isAbsent(i) && svcFilled(i.category));
   const cats = [...new Set(svc.map(i => i.category))];
   const absent = dayRows.filter(isAbsent).length;
-  if (!todo.length) return "";
-  if (S.addAsk !== k) return `<button class="btn tpl-btn" data-act="add-people" data-date="${k}">＋ Add People</button>`;
+  if (S.guestAsk === k) return guestForm(k, cats);
+  const guestBtn = `<button class="btn tpl-btn" data-act="guest-open" data-date="${k}">＋ Add Fill-In / Guest</button>`;
+  if (!todo.length) return `<div class="tpl-btns">${guestBtn}</div>`;
+  if (S.addAsk !== k) return `<div class="tpl-btns"><button class="btn tpl-btn" data-act="add-people" data-date="${k}">＋ Add People</button>${guestBtn}</div>`;
   const wd = fromKey(k).toLocaleDateString("en-US", { weekday: "long" });
   const choices = serviceChoices();
   if (!S.addCat || !choices.includes(S.addCat)) S.addCat = cats[0] || choices.find(c => c.startsWith(wd)) || choices[0] || "";
@@ -1845,6 +1855,20 @@ function adminAddPeople(k, dayRows){
       ${cats.length ? "" : `<select id="add-cat" aria-label="Service Category">${choices.map(c => `<option ${c === S.addCat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`}
       <button class="btn yes" data-act="add-people-yes" data-date="${k}" ${S.addBusy ? "disabled" : ""}>${S.addBusy ? esc(S.addBusy) : "Yes, add them"}</button>
       <button class="btn" data-act="add-people-keep" ${S.addBusy ? "disabled" : ""}>Cancel</button></div>`;
+}
+/* "Add Fill-In / Guest": one row for someone who isn't on the Roster (a guest singer or musician).
+   Saved with the typed Full Name and the chosen singing or musician position, already confirmed. */
+function guestForm(k, cats){
+  const groups = (S.servingGroups || []).filter(g => g.col === "SingingPositions" || g.col === "MusicianPositions");
+  const choices = serviceChoices(), wd = fromKey(k).toLocaleDateString("en-US", { weekday: "long" });
+  const cat = cats[0] || choices.find(c => c.startsWith(wd)) || choices[0] || "";
+  return `<form class="tpl-ask guest-form" id="guestForm" data-date="${k}">
+      <span class="guest-title">Add a fill-in or guest to ${esc(fmtShort(k))}${cats.length ? ` (${esc(cats[0])})` : ""}</span>
+      <input id="g-name" type="text" maxlength="200" placeholder="Their name" autocomplete="off" required aria-label="Name">
+      <select id="g-pos" required aria-label="Position"><option value="">— Choose a position —</option>
+        ${groups.map(g => `<optgroup label="${esc(g.label)}">${g.choices.map(c => `<option value="${esc(g.col + "|" + c)}">${esc(c)}</option>`).join("")}</optgroup>`).join("")}</select>
+      ${cats.length ? `<input type="hidden" id="g-cat" value="${esc(cats[0])}">` : `<select id="g-cat" aria-label="Service Category">${choices.map(c => `<option ${c === cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`}
+      <div class="guest-btns"><button class="btn yes" type="submit" id="g-save">Add</button><button class="btn" type="button" data-act="guest-close">Cancel</button></div></form>`;
 }
 /* People who sent an absence for this date (Absence tab), so admins don't schedule them. */
 /* Collapsible section headings (Edit Schedule and Calendar). Closed ones are remembered on this device. */
@@ -2105,7 +2129,7 @@ document.addEventListener("click", async e => {
       catch(err){ toast("Couldn't delete it. " + err.message, true); }
       S.busy.delete(item.id); S.rowDel = null; render(); updateBadge(); break;
     }
-    case "add-people": S.addAsk = b.dataset.date; S.addCat = null; render(); break;
+    case "add-people": S.addAsk = b.dataset.date; S.addCat = null; S.guestAsk = null; render(); break;
     case "add-people-keep": S.addAsk = null; render(); break;
     case "add-people-yes": {
       if (!isEditor() || S.addBusy) break;
@@ -2204,6 +2228,8 @@ document.addEventListener("click", async e => {
       } catch(err){ S.busy.delete("mg-" + p.id); toast("Couldn't delete. " + err.message, true); render(); }
       break;
     }
+    case "guest-open": S.guestAsk = b.dataset.date; S.addAsk = null; render(); $("#g-name")?.focus(); break;
+    case "guest-close": S.guestAsk = null; render(); break;
     case "share-site": {
       const em = b.dataset.email || "", w = window.open("", "_blank");
       try { if (em) await navigator.clipboard.writeText(em); } catch(e){}
@@ -2416,6 +2442,24 @@ document.addEventListener("submit", async e => {
       m.active = act;
       toast(`Saved: ${m.fullName}`); render();
     } catch(err){ toast("Couldn't save. " + err.message, true); btn.disabled = false; btn.textContent = "Save Roles & Status"; }
+    return;
+  }
+  if (e.target.id === "guestForm"){
+    if (!isEditor()) return;
+    const k = e.target.dataset.date, name = $("#g-name").value.trim().replace(/\s+/g, " "), pv = $("#g-pos").value, cat = $("#g-cat")?.value || "";
+    if (!name){ toast("Type their name.", true); return; }
+    if (!pv){ toast("Choose a position.", true); return; }
+    const [col, pos] = pv.split("|");
+    const btn = $("#g-save"); btn.disabled = true; btn.textContent = "Adding…";
+    const who = personForName(name);
+    const f = { ServiceDate: toSp(k), ServiceCategory: cat || null, FullName: name, [col + "@odata.type"]: "Collection(Edm.String)", [col]: [pos], Status: "Accepted", Published: "Request Approved" };
+    if (who) f.NameEmailLookupId = String(who.id);
+    try {
+      const id = await API.addItem(f);
+      const it = normalize(id, {}); Object.assign(it, { date: k, category: cat, fullName: name, first: firstOf(name), personId: who ? String(who.id) : "", email: who?.profile?.email || "",
+        positions: [pos], role: pos, status: "Accepted", published: "Request Approved" });
+      S.items.push(it); S.guestAsk = null; toast(`Added ${name}, ${pos}, ${fmtShort(k)}`); render(); updateBadge();
+    } catch(err){ toast("Couldn't add them. " + err.message, true); btn.disabled = false; btn.textContent = "Add"; }
     return;
   }
   if (e.target.classList.contains("admin-row") && e.target.dataset.new){
