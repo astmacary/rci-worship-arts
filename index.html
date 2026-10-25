@@ -263,6 +263,20 @@ a.btn{text-decoration:none}
 .btn.accept{background:var(--go);border-color:var(--go);color:#FFFFFF}
 .btn.decline{background:var(--stop);border-color:var(--stop);color:#FFFFFF}
 .btn.decline-soft{color:var(--bad)}
+.today-hero{position:relative;display:flex;flex-direction:column;gap:10px;padding:16px 16px 14px;border-radius:var(--r);border:2px solid var(--accent);background:linear-gradient(135deg,var(--accent-soft),var(--surface) 70%);box-shadow:0 6px 22px -10px var(--accent)}
+.today-h{display:flex;align-items:center;gap:8px;font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.today-dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 var(--accent);animation:todayPulse 1.8s ease-out infinite}
+@keyframes todayPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 60%,transparent)}100%{box-shadow:0 0 0 10px transparent}}
+@media (prefers-reduced-motion:reduce){.today-dot{animation:none}}
+.today-item{display:flex;flex-direction:column;gap:2px}
+.today-item + .today-item{border-top:1px solid var(--line);padding-top:10px}
+.today-role{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.05;letter-spacing:.01em;color:var(--fg);overflow-wrap:anywhere}
+.today-meta{font-size:14px;color:var(--muted)}
+.today-meta b{color:var(--fg)}
+.today-act{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
+.pill.pending-pill{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent)}
+.today-team{align-self:flex-start;border-color:var(--accent);color:var(--accent);font-weight:700}
+
 .wait-row{display:flex;align-items:center;gap:12px;padding:10px 12px;flex-wrap:wrap}
 .wait-info{flex:1;min-width:140px;display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
 .wait-btns{display:flex;gap:6px}
@@ -532,7 +546,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "32";
+const APP_VERSION = "33";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1362,6 +1376,21 @@ function cue(i, opts={}){
     </div></article>`;
 }
 
+/* Home: a highlighted "Serving Today" card for the signed-in person (everyone, not just admins). */
+function todayHero(){
+  const t = todayKey();
+  const list = assignments().filter(i => mine(i) && i.date === t && (approved(i) || pending(i))).sort((a, b) => Number(a.id) - Number(b.id));
+  if (!list.length) return "";
+  const roleOf = i => (typeof roleText === "function" ? roleText(i) : i.role) || "Serving";
+  return `<section class="today-hero" aria-label="Where you're serving today">
+    <div class="today-h"><span class="today-dot" aria-hidden="true"></span>You're Serving Today</div>
+    ${list.map(i => `<div class="today-item">
+      <div class="today-role">${esc(roleOf(i))}</div>
+      <div class="today-meta">${esc(i.category || "")}${i.call ? ` · Call Time <b>${esc(i.call)}</b>` : ""}${i.svcTime ? ` · Service <b>${esc(i.svcTime)}</b>` : ""}</div>
+      ${pending(i) ? `<div class="today-act"><span class="pill pending-pill">Needs your reply</span><button class="btn accept" data-act="accept" data-id="${esc(i.id)}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Saving…" : "Accept"}</button></div>` : ""}
+    </div>`).join("")}
+    <button class="btn today-team" data-act="team" data-date="${t}">See Today's Team</button></section>`;
+}
 function viewHome(){
   const t = todayKey(), wk = addDays(t, 7);
   const pend = assignments().filter(i => mine(i) && pending(i) && i.date >= t).sort(byDate);
@@ -1375,6 +1404,7 @@ function viewHome(){
   const myWall = myProfile() ? wallMessages(myProfile()) : [];
   return `
     <div><h1 class="greet">Welcome ${esc(first)}</h1><p class="sub">${esc(fmtLong(t))}</p></div>
+    ${todayHero()}
     <section><div class="day-h"><h2 class="section-label">Announcements</h2>${annEditBtn()}</div>
       ${anns.length ? `<div class="list">${anns.map(a => annCard(a)).join("")}</div>` : `<div class="empty">We have no upcoming announcements at this time.</div>`}
       ${S.annEdit ? `<div class="panel" style="margin-top:10px">${annForm()}</div>` : ""}
@@ -1384,8 +1414,8 @@ function viewHome(){
         <div class="list">${bdays.map(p => bdayRow(p, myProfile()?.id === p.id ? "That's you! Happy Birthday 🎂" : (CONFIG.messagesListId ? "Tap to wish them Happy Birthday 🎂" : "Tap to see their profile"), "wall")).join("")}</div></div></section>` : ""}
     ${myWall.length ? `<section><button class="person bday-row" data-act="wall" data-id="${myProfile().id}"><span class="wall-emoji" aria-hidden="true">💌</span><span class="meta"><b>You have ${myWall.length} birthday message${myWall.length > 1 ? "s" : ""}</b><small>Tap to read your Birthday Wall</small></span><span class="chev">${ICON.next}</span></button></section>` : ""}
     ${waitingPanel()}
-    <section><h2 class="section-label">Pending Requests <span class="count ${pend.length?"hot":""}">${pend.length}</span></h2>
-      ${pend.length ? `<div class="list">${pend.map(i=>cue(i)).join("")}</div>` : `<div class="empty">You have no pending requests right now.</div>`}</section>
+    ${""/* Pending Requests hidden on Home for now (Oct 25). To bring it back, restore:     <section><h2 class="section-label">Pending Requests <span class="count $ {pend.length?"hot":""}">$ {pend.length}</span></h2>
+      $ {pend.length ? \`<div class="list">$ {pend.map(i=>cue(i)).join("")}</div>\` : \`<div class="empty">You have no pending requests right now.</div>\`}</section> */}
     <section><h2 class="section-label">Next 7 Days <span class="count">${up.length}</span></h2>
       ${up.length ? `<div class="list">${up.map(i => isAbsent(i) ? absentCue(i) : cue(i,{pill:true})).join("")}</div>` : `<div class="empty">You have no confirmed assignments this week.</div>`}</section>`;
 }
