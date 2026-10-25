@@ -470,7 +470,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "22";
+const APP_VERSION = "23";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1651,10 +1651,14 @@ function calSections(list){
   }).join("");
 }
 function sectioned(list, html){
-  // Confirmed people first, then everyone else in list order.
+  // Confirmed people first; Singers are then A–Z by name, other sections keep list order.
   const order = new Map(list.map((i, n) => [i.id, n]));
   const ranked = list.slice().sort((a, b) => (approved(b) - approved(a)) || (order.get(a.id) - order.get(b.id)));
-  return SECTIONS.map(h => { const part = ranked.filter(i => sectionOf(i) === h); return part.length
+  const byName = (a, b) => (approved(b) - approved(a)) || (a.fullName || "").localeCompare(b.fullName || "");
+  // With no confirmed singers yet, Musicians come before Singers.
+  const noSingersYet = !list.some(i => sectionOf(i) === "Singers" && approved(i));
+  const heads = noSingersYet ? SECTIONS.map(h => h === "Singers" ? "Musicians" : h === "Musicians" ? "Singers" : h) : SECTIONS;
+  return heads.map(h => { const part = ranked.filter(i => sectionOf(i) === h); if (h === "Singers") part.sort(byName); return part.length
     ? `<section class="role-sec"><h2 class="section-label">${h} <span class="count">${part.length}</span></h2>${html(part)}</section>` : ""; }).join("");
 }
 function posSelect(i, sid, dis){
@@ -1725,7 +1729,9 @@ function adminNoService(k, rows){
 function addPeopleList(k, dayRows){
   const have = new Set(dayRows.filter(i => i.fullName).map(i => lc(i.fullName)));
   const skip = new Set((CONFIG.addPeopleSkip || []).map(lc));
-  return (S.names || []).filter(n => n && n !== "--" && !/^choice \d+$/i.test(n) && !skip.has(lc(n)) && !have.has(lc(n)));
+  // People marked "Non Active" on their Roster row are left out.
+  const nonActive = new Set(S.items.filter(i => isProfile(i) && lc(i.active) === "non active").map(i => lc(i.fullName)));
+  return (S.names || []).filter(n => n && n !== "--" && !/^choice \d+$/i.test(n) && !skip.has(lc(n)) && !have.has(lc(n)) && !nonActive.has(lc(n)));
 }
 function adminAddPeople(k, dayRows){
   if (dayRows.some(isNoService)) return "";
