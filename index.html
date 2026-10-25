@@ -456,6 +456,7 @@ const CONFIG = {
   positionCols: ["LeaderPositions", "SingingPositions", "MusicianPositions"],
   // "Places I Serve" on the profile row edits these two multi-choice columns.
   servingCols: [["LeaderPositions", "Leadership", true], ["SingingPositions", "Singing"], ["MusicianPositions", "Music"]],   // true = one choice only
+  notServingPosition: "N/S",       // Singing position meaning "not singing": saved with Status N/S and Published "--"
   absentCategory: "Absent",
   addPeopleSkip: ["Ashley St Macary", "Ashley St. Macary"],   // Full Names left out of "Add People"
   docsFolder: "RCI Worship Team Documents",   // folder in the site's Documents library shown on the Docs tab (everyone edits; admins add)
@@ -469,7 +470,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "20";
+const APP_VERSION = "21";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1625,6 +1626,7 @@ function sectionOf(i){
   const all = S.servingGroups || [], g = c => all.find(x => x.col === c);
   const sing = g("SingingPositions")?.choices || [], mus = g("MusicianPositions")?.choices || [];
   const ps = i.positions || [];
+  if (ps.some(x => lc(x) === lc(CONFIG.notServingPosition)) || lc(i.status || "") === lc(CONFIG.notServingPosition)) return "N/S";
   if (ps.includes("Worship Leader")) return "Worship Leaders";
   if (ps.some(x => sing.includes(x))) return "Singers";
   if (ps.some(x => mus.includes(x))) return "Musicians";
@@ -1633,7 +1635,7 @@ function sectionOf(i){
   if (roles.some(x => mus.includes(x))) return "Musicians";
   return "Not Tagged";
 }
-const SECTIONS = ["Worship Leaders", "Singers", "Musicians", "Not Tagged"];
+const SECTIONS = ["Worship Leaders", "Singers", "Musicians", "Not Tagged", "N/S"];
 /* Calendar day roster: Worship Leaders (position Worship Leader, or a Leadership position), Singers, Musicians. */
 function calSection(i){
   const ps = i.positions || [], lead = (S.servingGroups || []).find(g => g.col === "LeaderPositions")?.choices || [];
@@ -1789,7 +1791,6 @@ function viewAdmin(){
         <span class="tile-sub">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span></div>
       <div class="tile-fields">
         <label class="tile-f"><span>Position</span>${posSelect(i, sid, dis)}</label>
-        <label class="tile-f"><span>Published</span><select id="ad-pub-${sid}" data-f="Published" ${dis}>${opts((S.choices || {}).published, i.published, "—")}</select></label>
       </div>
       ${S.rowDel === i.id ? `<div class="tile-confirm">Delete ${esc(i.role || "this position")}${i.fullName ? ` (${esc(i.fullName)})` : ""}?
         <button type="button" class="btn decline-soft" data-act="row-del-yes" data-id="${sid}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Deleting…" : "Yes, Delete"}</button>
@@ -1797,7 +1798,7 @@ function viewAdmin(){
     </form>`;
   };
   return `${backBar("Edit Schedule")}
-    <ol class="panel steps"><li>Choose a Position from the drop down menu.</li><li>Change the status to <b>"Published"</b> and hit the <span class="inline-check" aria-label="check">${ICON.check}</span> to save.</li></ol>
+    <ol class="panel steps"><li>Choose a Position from the drop down menu.</li><li>Hit the <span class="inline-check" aria-label="check">${ICON.check}</span> to save. The position is confirmed right away (choose <b>N/S</b> for someone who isn't singing).</li></ol>
     <div class="date-chips" role="group" aria-label="Service dates">${chips}${adminPickChip()}</div>
     ${adminPickField()}
     ${adminDayHeader(k, dayRows)}
@@ -1856,6 +1857,8 @@ function render(){
     return;
   }
   const views = { admin: viewAdmin, directory: viewDirectory, home: viewHome, schedule: viewSchedule, calendar: viewCalendar, notes: viewNotes, team: viewTeam, member: viewMember, absence: viewAbsence, docs: viewDocs, doc: viewDoc, profile: viewProfile };
+  if (!views[S.view]){ S.view = "home"; S.arg = null; }
+  saveNav();
   const active = ["notes","team","member","admin","doc"].includes(S.view) ? (S.stack[0]?.view || "home") : S.view;
   const demoBar = DEMO ? `<div class="demo"><span><strong>Demo mode.</strong> Sample people and dates; nothing is saved to SharePoint. Add your app's client ID in the configuration to connect the Serving Schedule list.</span></div>` : "";
   app.innerHTML = header + `<main><div class="wrap">${demoBar}${views[S.view]()}</div></main>
@@ -1863,6 +1866,22 @@ function render(){
   hydratePhotos(); hydrateFlyers();
 }
 
+/* Remember the page being viewed, so reloading the app (pull to refresh, the browser's reload, an update)
+   comes back to the same page instead of Home. Kept for this tab/app window only. */
+const NAV_KEY = "rci-nav:" + location.pathname;
+const NAV_SKIP = { doc: "docs" };   // pages that can't be rebuilt on their own go to their parent
+function saveNav(){
+  try { sessionStorage.setItem(NAV_KEY, JSON.stringify({ view: S.view, arg: S.arg, stack: S.stack.slice(-10),
+    adminDate: S.adminDate || null, adminExtra: S.adminExtra || null, calSel: S.cal.sel, calMonth: S.cal.month ? keyOf(S.cal.month) : null })); } catch(_){}
+}
+function restoreNav(){
+  try {
+    const n = JSON.parse(sessionStorage.getItem(NAV_KEY) || "null"); if (!n || !n.view) return;
+    S.view = NAV_SKIP[n.view] || n.view; S.arg = NAV_SKIP[n.view] ? null : n.arg; S.stack = Array.isArray(n.stack) ? n.stack : [];
+    if (n.adminDate) S.adminDate = n.adminDate; if (n.adminExtra) S.adminExtra = n.adminExtra;
+    if (n.calSel) S.cal.sel = n.calSel; if (n.calMonth) S.cal.month = fromKey(n.calMonth);
+  } catch(_){}
+}
 function go(view, arg=null, push=true){
   if (push) S.stack.push({ view: S.view, arg: S.arg });
   S.view = view; S.arg = arg; S.confirm = null; render(); window.scrollTo(0,0);
@@ -2170,7 +2189,7 @@ document.addEventListener("submit", async e => {
   if (e.target.classList.contains("admin-row")){
     const item = S.items.find(i => i.id === e.target.dataset.id); if (!item) return;
     const get = (f, dflt) => { const el = e.target.querySelector(`[data-f="${f}"]`); return el ? el.value : dflt; };
-    const fields = {}, next = { fullName: get("FullName", item.fullName), personId: get("NameEmailLookupId", item.personId), published: get("Published") };
+    const fields = {}, next = { fullName: get("FullName", item.fullName), personId: get("NameEmailLookupId", item.personId), published: get("Published", item.published) };
     if (next.fullName !== item.fullName) fields.FullName = next.fullName || null;
     if (next.personId !== item.personId) fields.NameEmailLookupId = next.personId ? String(next.personId) : null;
     if (next.published !== item.published) fields.Published = next.published || null;
@@ -2185,13 +2204,20 @@ document.addEventListener("submit", async e => {
       });
       next.positions = val ? [val] : [];
       next.role = val || "";
+      // Saving a position confirms it: Status Accepted / Published Request Approved.
+      // "N/S" instead gets Status N/S and Published "--" (and moves out of Singers).
+      if (val && lc(val) === lc(CONFIG.notServingPosition)){ next.status = "N/S"; next.published = "--"; }
+      else if (val){ next.status = "Accepted"; next.published = "Request Approved"; }
+      if (val){ if (item.published !== next.published) fields.Published = next.published; }
+      next.posStatus = !!val;
     }
     const btn = e.target.querySelector('button[type="submit"]');
     if (!Object.keys(fields).length){ btn.disabled = true; return; }
     // Published decides Status when it's changed to Request Approved (Accepted) or Request Declined (Declined).
     // Any other change sends it back to Pending, so the person confirms again.
     const pubStatus = { "request approved": "Accepted", [lc(CONFIG.publishedDenied)]: "Declined" }[lc(next.published || "")];
-    const newStatus = (fields.Published !== undefined && pubStatus) ? pubStatus : (fields.Published === undefined && pubStatus ? item.status : "Pending");
+    const newStatus = next.posStatus ? next.status : (fields.Published !== undefined && pubStatus) ? pubStatus : (fields.Published === undefined && pubStatus ? item.status : "Pending");
+    delete next.posStatus;
     if (item.status !== newStatus) fields.Status = newStatus;
     next.status = newStatus;
     btn.disabled = true; btn.classList.add("busy");
@@ -2315,6 +2341,7 @@ async function start(){
     const data = await API.load();
     S.me = data.me; S.items = data.items; S.names = data.names; S.servingChoices = data.servingChoices || []; S.choices = data.choices || {}; S.users = data.users || []; S.announcements = data.announcements || []; S.messages = data.messages || [];
     const t = new Date(); S.cal.month = new Date(t.getFullYear(), t.getMonth(), 1); S.cal.sel = todayKey();
+    restoreNav();
     S.phase = "ready"; render(); maybeConfetti(); updateBadge();
   } catch(e){
     console.error(e); S.error = e.message || String(e); S.phase = "error"; render();
