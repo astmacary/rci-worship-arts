@@ -133,6 +133,16 @@ h1.greet{font-family:var(--display);font-weight:700;font-size:clamp(30px,8vw,40p
 .admin-row.locked select{opacity:.55}
 .name-pick{display:flex;align-items:center;gap:10px}
 .card-who{min-width:0;flex:1}
+.admin-flag{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.seg-btn{background:transparent;border:none;padding:7px 14px;font-weight:600;font-size:14px;color:var(--muted)}
+.seg-btn + .seg-btn{border-left:1px solid var(--line)}
+.seg-btn.on[data-value="Active"]{background:var(--ok-soft);color:var(--ok)}
+.seg-btn.on[data-value="Non Active"]{background:var(--bad-soft);color:var(--bad)}
+.pos-fixed{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 12px;min-height:40px}
+.pos-fixed span{font-size:12.5px;font-weight:600;color:var(--muted)}
+.pos-fixed b{font-size:15px}
+.admin-row.locked .pos-fixed{opacity:.6}
 /* Edit Schedule tiles */
 .admin-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:8px}
 .admin-tile{padding:8px;gap:6px;min-width:0}
@@ -480,7 +490,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "24";
+const APP_VERSION = "25";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1469,13 +1479,28 @@ function viewMember(){
       <dt>Birthday</dt><dd>${esc(bd)}</dd>
       ${p.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ""))}" style="color:var(--accent);font-weight:600">${esc(p.phone)}</a></dd>` : ""}
     </dl></section>
-    <section><h2 class="section-label">Roles</h2>
-      ${(p.positions || []).length ? `<ul class="panel rows">${p.positions.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">No roles listed yet.</div>`}</section>
+    ${isEditor() ? memberAdmin(p) : `<section><h2 class="section-label">Roles</h2>
+      ${(p.positions || []).length ? `<ul class="panel rows">${p.positions.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">No roles listed yet.</div>`}</section>`}
     ${likesSection(p)}
     ${wallSection(p)}
     ${next.length ? `<section><h2 class="section-label">Serving Next</h2><div class="list">${next.map(i=>`<div class="panel" style="padding:10px 14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(i.role)}</b><span class="sub" style="margin:0">${esc(fmtShort(i.date))}</span></div>`).join("")}</div></section>` : ""}`;
 }
 
+/* Admins only: edit someone's Roles (Leadership pick one; Singing and Music any) and their Active Status, on their About page. */
+function memberAdmin(p){
+  const groups = S.servingGroups || [];
+  const act = lc(p.active) === "non active" ? "Non Active" : lc(p.active) === "active" ? "Active" : "";
+  return `<form class="panel stack" id="memberAdminForm" data-id="${esc(p.id)}">
+      <div class="admin-flag"><span class="section-label" style="margin:0">Team Member</span>
+        <div class="seg" role="group" aria-label="Active status">
+          ${["Active", "Non Active"].map(v => `<button type="button" class="seg-btn ${act === v ? "on" : ""}" data-act="ma-active" data-value="${v}" aria-pressed="${act === v}">${v}</button>`).join("")}
+        </div><input type="hidden" id="ma-active" value="${esc(act)}"></div>
+      <span class="hint" style="margin-top:-4px">Only admins see this. Non Active people are left out of Add People.</span>
+      <div class="field"><span class="label">Roles</span>
+        ${groups.map(g => `<span class="hint" style="font-weight:700;margin-top:6px">${esc(g.label)}${g.single ? " (pick one)" : ""}</span>
+        <div class="checklist">${g.choices.map(x => `<button type="button" class="serve-opt" data-act="serve-toggle" data-col="${esc(g.col)}" ${g.single ? 'data-single="1"' : ""} data-value="${esc(x)}" aria-pressed="${(p.positions || []).includes(x)}"><span class="box" aria-hidden="true">${ICON.check}</span>${esc(x)}</button>`).join("")}</div>`).join("")}</div>
+      <button class="btn blue block" type="submit" id="ma-save">Save Roles &amp; Status</button></form>`;
+}
 function noProfileMsg(){
   return `<div class="empty">We couldn't find you on the team Roster. Ask the schedule admin to add a Roster row (Service Category and Service Date blank) with your Full Name and your email in Name Email.</div>`;
 }
@@ -1638,6 +1663,7 @@ function sectionOf(i){
   const ps = i.positions || [];
   if (ps.some(x => lc(x) === lc(CONFIG.notServingPosition)) || lc(i.status || "") === lc(CONFIG.notServingPosition)) return "N/S";
   if (ps.includes("Worship Leader")) return "Worship Leaders";
+  if (!ps.length && (rosterOf(i)?.positions || []).includes("Worship Leader")) return "Worship Leaders";
   if (ps.some(x => sing.includes(x))) return "Singers";
   if (ps.some(x => mus.includes(x))) return "Musicians";
   const roles = rosterOf(i)?.positions || [];
@@ -1669,7 +1695,7 @@ function voiceOf(i){
 function singersBody(part, html, scope){
   const groups = VOICES.map(v => [v, part.filter(i => voiceOf(i) === v)]).filter(([, p]) => p.length);
   const rest = part.filter(i => !voiceOf(i));
-  return groups.map(([v, p]) => secBlock(`${scope}:Singers:${v}`, v, p.length, html(p), true)).join("") + (rest.length ? html(rest) : "");
+  return groups.map(([v, p]) => secBlock(`${scope}:Singers:${v}`, v + "s", p.length, html(p), true)).join("") + (rest.length ? html(rest) : "");
 }
 function sectioned(list, html, scope = "admin"){
   // Confirmed people first; Singers are then A–Z by name, other sections keep list order.
@@ -1809,36 +1835,51 @@ function viewAdmin(){
   const dayRows = S.items.filter(i => !isProfile(i) && i.date === k);
   const rows = dayRows.filter(i => !isNoService(i) && !isAbsent(i)).sort((x, y) => Number(x.id) - Number(y.id));   // same order as the SharePoint list
   const chips = dates.map(d => { const x = fromKey(d); return `<button class="date-chip ${d === k ? "on" : ""}" data-act="admin-date" data-date="${d}" aria-pressed="${d === k}"><span>${x.toLocaleDateString(undefined,{weekday:"short"})}</span><b>${x.getDate()}</b><span>${x.toLocaleDateString(undefined,{month:"short"})}</span></button>`; }).join("");
+  // The position a singer card is prefilled with: Worship Leader for the Worship Leaders section,
+  // otherwise their voice part (Soprano/Alto/Tenor). Musicians and untagged people still choose from the drop-down.
+  const prefillOf = i => {
+    const sec = sectionOf(i);
+    if (sec === "Worship Leaders") return "Worship Leader";
+    if (sec === "Singers") return voiceOf(i) || "";
+    return "";
+  };
   const card = i => {
     const sid = esc(i.id);
     const locked = i.status === "Accepted" && !(S.adminUnlocked || new Set()).has(i.id);
     const dis = locked ? "disabled" : "";
-    // Compact tile (several side by side, like the Calendar roster): status + delete + save on top,
-    // photo and name in the middle, then Position and Published.
-    return `<form class="panel admin-row admin-tile ${locked ? "locked" : ""}" data-id="${sid}">
-      <div class="tile-bar">${statusPill(i)}<span class="tile-btns"><button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${sid}" aria-label="Delete this position" title="Delete position">${ICON.trash}</button>${locked
+    const pre = prefillOf(i);
+    // Prefilled: a hidden value; the ✓ is ready unless they're already confirmed in that position.
+    const done = approved(i) && (i.positions || []).length === 1 && i.positions[0] === pre;
+    const posField = pre
+      ? `<input type="hidden" data-f="Position" data-init="${done ? esc("SingingPositions|" + pre) : ""}" value="${esc("SingingPositions|" + pre)}">
+         <div class="pos-fixed"><span>Position</span><b>${esc(pre)}</b></div>`
+      : `<div class="field wide"><label for="ad-pos-${sid}">Position</label>${posSelect(i, sid, dis)}</div>`;
+    const save = pre && !done && !locked
+      ? `<button class="iconbtn notes-btn save-btn" type="submit" aria-label="Confirm ${esc(i.fullName || "")} as ${esc(pre)}" title="Confirm">${ICON.check}</button>`
+      : saveIcon();
+    return `<form class="panel admin-row ${locked ? "locked" : ""}" data-id="${sid}">
+      <div class="admin-top">
+        <div class="name-pick card-who"><span data-face>${faceFor(i.personId, i.fullName)}</span>
+          <div class="admin-title"><b>${esc(i.fullName || "Not assigned")}</b><span class="sub" style="margin:0">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span></div></div>
+        <div class="admin-side">${statusPill(i)}<button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${sid}" aria-label="Delete this position" title="Delete position">${ICON.trash}</button>${locked
           ? `<button class="iconbtn notes-btn" type="button" data-act="admin-unlock" data-id="${sid}" aria-label="Edit this assignment" title="Edit">${ICON.pencil}</button>`
-          : saveIcon()}</span></div>
-      <div class="tile-who"><span data-face>${faceFor(i.personId, i.fullName)}</span>
-        <b class="tile-name">${esc(i.fullName || "Not assigned")}</b>
-        <span class="tile-sub">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span></div>
-      <div class="tile-fields">
-        <label class="tile-f"><span>Position</span>${posSelect(i, sid, dis)}</label>
+          : save}</div>
       </div>
-      ${S.rowDel === i.id ? `<div class="tile-confirm">Delete ${esc(i.role || "this position")}${i.fullName ? ` (${esc(i.fullName)})` : ""}?
+      <div class="admin-grid">${posField}</div>
+      ${S.rowDel === i.id ? `<div class="confirm-row">Delete ${esc(i.role || pre || "this position")}${i.fullName ? ` (${esc(i.fullName)})` : ""} on ${esc(fmtShort(i.date))}?
         <button type="button" class="btn decline-soft" data-act="row-del-yes" data-id="${sid}" ${S.busy.has(i.id) ? "disabled" : ""}>${S.busy.has(i.id) ? "Deleting…" : "Yes, Delete"}</button>
         <button type="button" class="btn" data-act="row-del-keep">Keep It</button></div>` : ""}
     </form>`;
   };
   return `${backBar("Edit Schedule")}
-    <ol class="panel steps"><li>Choose a Position from the drop down menu.</li><li>Hit the <span class="inline-check" aria-label="check">${ICON.check}</span> to save. Choose <b>N/S</b> for someone who isn't singing.</li></ol>
+    <ol class="panel steps"><li>Singers and Worship Leaders: tap the <span class="inline-check" aria-label="check">${ICON.check}</span> to confirm them in the position shown, or the trash to remove them.</li><li>Musicians: choose a Position from the drop down menu, then hit the <span class="inline-check" aria-label="check">${ICON.check}</span> to save.</li></ol>
     <div class="date-chips" role="group" aria-label="Service dates">${chips}${adminPickChip()}</div>
     ${adminPickField()}
     ${adminDayHeader(k, dayRows)}
     ${adminNoService(k, dayRows)}
     ${adminAbsent(dayRows)}
     ${adminAddPeople(k, dayRows)}
-    ${rows.length ? sectioned(rows, part => `<div class="admin-tiles">${part.map(card).join("")}</div>`) : `<div class="empty">Nothing else is scheduled on this date.</div>`}`;
+    ${rows.length ? sectioned(rows, part => `<div class="list">${part.map(card).join("")}</div>`) : `<div class="empty">Nothing else is scheduled on this date.</div>`}`;
 }
 
 /* ---------- red badge on the app icon for pending requests ---------- */
@@ -2040,7 +2081,7 @@ document.addEventListener("click", async e => {
           S.items.push(it);
         });
         const autoN = rows.filter((r, n) => r.auto && ids[n]).length;
-        toast(ok === rows.length ? `Added ${ok} people to ${fmtShort(k)}${autoN ? ` (${autoN} musician${autoN > 1 ? "s" : ""} confirmed)` : ""}` : `Added ${ok} of ${rows.length}; try Add People again for the rest.`, ok !== rows.length);
+        toast(ok === rows.length ? `Added ${ok} people to ${fmtShort(k)}` : `Added ${ok} of ${rows.length}; try Add People again for the rest.`, ok !== rows.length);
         S.addAsk = null;
       } catch(err){ toast("Couldn't add people. " + err.message, true); }
       S.addBusy = ""; render(); break;
@@ -2079,6 +2120,11 @@ document.addEventListener("click", async e => {
     case "theme": toggleTheme(); break;
     case "accept": setStatus(item, true); break;
     case "abs-cancel": S.absConfirm = b.dataset.id; render(); break;
+    case "ma-active": {
+      const cur = $("#ma-active"), v = cur.value === b.dataset.value ? "" : b.dataset.value; cur.value = v;
+      document.querySelectorAll('[data-act="ma-active"]').forEach(x => { const on = x.dataset.value === v; x.classList.toggle("on", on); x.setAttribute("aria-pressed", on); });
+      break;
+    }
     case "docs-refresh": if (S.docs) docsLoad(); break;
     case "docs-view": S.docView = null; S.docDelAsk = null; go("doc", b.dataset.id); break;
     case "docs-view-refresh": S.docView = null; render(); break;
@@ -2220,6 +2266,27 @@ document.addEventListener("submit", async e => {
     } catch(e){}
   }
   // Admin saves (schedule cards, announcements) don't need the admin to have a Roster row.
+  if (e.target.id === "memberAdminForm"){
+    if (!isEditor()) return;
+    const m = S.items.find(i => i.id === e.target.dataset.id); if (!m) return;
+    const on = [...e.target.querySelectorAll('.serve-opt[aria-pressed="true"]')];
+    const f = {};
+    (S.servingGroups || []).forEach(g => {
+      const vals = on.filter(b => b.dataset.col === g.col).map(b => b.dataset.value);
+      if (g.single) f[g.col] = vals[0] || null;
+      else { f[g.col + "@odata.type"] = "Collection(Edm.String)"; f[g.col] = vals; }
+    });
+    const act = $("#ma-active").value; f.ActiveStatus = act || null;
+    const btn = $("#ma-save"); btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      await API.update(m.id, f);
+      m.positions = (S.servingGroups || []).flatMap(g => [].concat(f[g.col] || []));
+      m.serving = m.positions.filter(x => !(S.servingGroups || []).find(g => g.single && g.choices.includes(x)));
+      m.active = act;
+      toast(`Saved: ${m.fullName}`); render();
+    } catch(err){ toast("Couldn't save. " + err.message, true); btn.disabled = false; btn.textContent = "Save Roles & Status"; }
+    return;
+  }
   if (e.target.classList.contains("admin-row")){
     const item = S.items.find(i => i.id === e.target.dataset.id); if (!item) return;
     const get = (f, dflt) => { const el = e.target.querySelector(`[data-f="${f}"]`); return el ? el.value : dflt; };
