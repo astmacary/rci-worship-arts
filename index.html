@@ -263,6 +263,19 @@ a.btn{text-decoration:none}
 .btn.accept{background:var(--go);border-color:var(--go);color:#FFFFFF}
 .btn.decline{background:var(--stop);border-color:var(--stop);color:#FFFFFF}
 .btn.decline-soft{color:var(--bad)}
+.wait-row{display:flex;align-items:center;gap:12px;padding:10px 12px;flex-wrap:wrap}
+.wait-info{flex:1;min-width:140px;display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
+.wait-btns{display:flex;gap:6px}
+.manage-panel .actions{display:flex;gap:8px;flex-wrap:wrap}
+.del-person{display:flex;flex-direction:column;gap:8px;background:var(--bad-soft);border-radius:10px;padding:10px 12px;font-weight:600}
+.gone-note{display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:14px}
+.archived-sec{margin-top:18px}
+.archived-sec summary{cursor:pointer;list-style:none}
+.archived-sec summary::-webkit-details-marker{display:none}
+.archived-sec summary::before{content:"▸";margin-right:2px}
+.archived-sec[open] summary::before{content:"▾"}
+.archived-roster .av{filter:grayscale(1);opacity:.7}
+
 .btn.blue{background:var(--blue);border-color:var(--blue);color:#FFFFFF}
 .btn:disabled{opacity:.55;cursor:default}
 .btn.block{width:100%;justify-content:center;padding:11px 14px}
@@ -514,7 +527,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "29";
+const APP_VERSION = "30";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -603,6 +616,7 @@ function normalize(id, f, emailById){
     photoRaw: f.Photo || "",
     likes: f[CONFIG.likesCol] || "",
     active: f.ActiveStatus || "",
+    gone: !f.ServiceDate && lc(f.Status) === "unavailable",
     pendingEmail: /@/.test(f.Title || "") ? String(f.Title).trim() : "",
     serving: CONFIG.servingCols.flatMap(([c]) => Array.isArray(f[c]) ? f[c] : (f[c] ? [f[c]] : []))
   };
@@ -1023,7 +1037,7 @@ function tile(person, line, act, id){
 function birthdaysToday(){
   const t = todayKey(), md = t.slice(5), y = Number(t.slice(0,4));
   const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-  return S.items.filter(i => isProfile(i) && i.birthday && (i.birthday.slice(5) === md || (!leap && md === "02-28" && i.birthday.slice(5) === "02-29")))
+  return S.items.filter(i => isProfile(i) && !i.gone && i.birthday && (i.birthday.slice(5) === md || (!leap && md === "02-28" && i.birthday.slice(5) === "02-29")))
     .sort((a,b) => a.fullName.localeCompare(b.fullName));
 }
 
@@ -1364,6 +1378,7 @@ function viewHome(){
       <div class="panel bday-panel"><p class="bday-msg">🎉 Happy Birthday! 🎂</p>
         <div class="list">${bdays.map(p => bdayRow(p, myProfile()?.id === p.id ? "That's you! Happy Birthday 🎂" : (CONFIG.messagesListId ? "Tap to wish them Happy Birthday 🎂" : "Tap to see their profile"), "wall")).join("")}</div></div></section>` : ""}
     ${myWall.length ? `<section><button class="person bday-row" data-act="wall" data-id="${myProfile().id}"><span class="wall-emoji" aria-hidden="true">💌</span><span class="meta"><b>You have ${myWall.length} birthday message${myWall.length > 1 ? "s" : ""}</b><small>Tap to read your Birthday Wall</small></span><span class="chev">${ICON.next}</span></button></section>` : ""}
+    ${waitingPanel()}
     <section><h2 class="section-label">Pending Requests <span class="count ${pend.length?"hot":""}">${pend.length}</span></h2>
       ${pend.length ? `<div class="list">${pend.map(i=>cue(i)).join("")}</div>` : `<div class="empty">You have no pending requests right now.</div>`}</section>
     <section><h2 class="section-label">Next 7 Days <span class="count">${up.length}</span></h2>
@@ -1380,7 +1395,7 @@ function viewSchedule(){
 function eventsOn(k){
   const md = k.slice(5);
   const a = assignments().filter(i => approved(i) && i.date === k).sort((x, y) => Number(x.id) - Number(y.id));   // same order as the SharePoint list
-  const b = S.items.filter(i => isProfile(i) && i.birthday && i.birthday.slice(5) === md);
+  const b = S.items.filter(i => isProfile(i) && !i.gone && i.birthday && i.birthday.slice(5) === md);
   const none = S.items.some(i => i.date === k && lc(i.category) === lc(CONFIG.noServiceCategory));
   return { a, b, none };
 }
@@ -1495,7 +1510,7 @@ function viewMember(){
   const bd = p.birthday ? fromKey(p.birthday).toLocaleDateString(undefined,{month:"long",day:"numeric"}) : "—";
   const t = todayKey();
   const next = assignments().filter(i => i.date >= t && approved(i) && ((p.email && i.email === p.email) || i.fullName === p.fullName)).sort(byDate).slice(0,3);
-  return `${backBar("About " + (p.first || firstOf(p.fullName)))}${accessPanel(p)}
+  return `${backBar("About " + (p.first || firstOf(p.fullName)))}${accessPanel(p)}${goneNote(p)}
     <section class="panel profile-hero">${avatar(p,"lg")}<h2>${esc(p.fullName)}</h2>
       ${p.email && myProfile()?.id !== p.id ? `<a class="btn blue" href="mailto:${esc(p.email)}">${ICON.mail}Email Me</a><span class="sub email-addr">${esc(p.email)}</span>` : ""}</section>
     <section class="panel"><dl class="kv">
@@ -1508,7 +1523,8 @@ function viewMember(){
       ${(p.positions || []).length ? `<ul class="panel rows">${p.positions.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">No roles listed yet.</div>`}</section>`}
     ${likesSection(p)}
     ${wallSection(p)}
-    ${next.length ? `<section><h2 class="section-label">Serving Next</h2><div class="list">${next.map(i=>`<div class="panel" style="padding:10px 14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(i.role)}</b><span class="sub" style="margin:0">${esc(fmtShort(i.date))}</span></div>`).join("")}</div></section>` : ""}`;
+    ${next.length ? `<section><h2 class="section-label">Serving Next</h2><div class="list">${next.map(i=>`<div class="panel" style="padding:10px 14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(i.role)}</b><span class="sub" style="margin:0">${esc(fmtShort(i.date))}</span></div>`).join("")}</div></section>` : ""}
+    ${managePanel(p)}`;
 }
 
 /* Admins only: edit someone's Roles (Leadership pick one; Singing and Music any) and their Active Status, on their About page. */
@@ -1581,11 +1597,12 @@ function viewAbsence(){
 }
 
 function viewDirectory(){
-  const people = S.items.filter(isProfile).sort((a,b) => (a.fullName||"").localeCompare(b.fullName||""));
+  const people = S.items.filter(p => isProfile(p) && !p.gone).sort((a,b) => (a.fullName||"").localeCompare(b.fullName||""));
   return `<div class="page-h"><h1>Team Directory</h1></div>
     ${isEditor() ? newPersonForm() : ""}
     <p class="sub" style="margin-top:-10px">${people.length} team members</p>
-    ${people.length ? `<div class="roster">${people.map(p => `<button class="tile" data-act="member" data-id="${p.id}">${avatar(p)}<span class="meta"><b>${esc(p.fullName)}</b></span></button>`).join("")}${isEditor() && !S.addPerson ? addTile() : ""}</div>` : isEditor() && !S.addPerson ? `<div class="roster">${addTile()}</div>` : `<div class="empty">No team members yet.</div>`}`;
+    ${people.length ? `<div class="roster">${people.map(p => `<button class="tile" data-act="member" data-id="${p.id}">${avatar(p)}<span class="meta"><b>${esc(p.fullName)}</b></span></button>`).join("")}${isEditor() && !S.addPerson ? addTile() : ""}</div>` : isEditor() && !S.addPerson ? `<div class="roster">${addTile()}</div>` : `<div class="empty">No team members yet.</div>`}
+    ${archivedSection()}`;
 }
 
 /* Singing and Music choices for "Places I Serve", plus anything already saved that's no longer a choice. */
@@ -1808,7 +1825,7 @@ function addPeopleList(k, dayRows){
   const have = new Set(dayRows.filter(i => i.fullName).map(i => lc(i.fullName)));
   const skip = new Set((CONFIG.addPeopleSkip || []).map(lc));
   // People marked "Non Active" on their Roster row are left out.
-  const nonActive = new Set(S.items.filter(i => isProfile(i) && lc(i.active) === "non active").map(i => lc(i.fullName)));
+  const nonActive = new Set(S.items.filter(i => isProfile(i) && (i.gone || lc(i.active) === "non active")).map(i => lc(i.fullName)));
   return (S.names || []).filter(n => n && n !== "--" && !/^choice \d+$/i.test(n) && !skip.has(lc(n)) && !have.has(lc(n)) && !nonActive.has(lc(n)));
 }
 function adminAddPeople(k, dayRows){
@@ -2108,7 +2125,7 @@ document.addEventListener("click", async e => {
         const musChoices = (S.servingGroups || []).find(g => g.col === "MusicianPositions")?.choices || [];
         const mus = (prof?.positions || []).filter(r => musChoices.includes(r));
         let auto = null;
-        if (prof && lc(prof.active) === "active" && mus.length === 1){
+        if (prof && !prof.gone && lc(prof.active) === "active" && mus.length === 1){
           auto = mus[0];
           f["MusicianPositions@odata.type"] = "Collection(Edm.String)"; f.MusicianPositions = [auto];
           f.Status = "Accepted"; f.Published = "Request Approved";
@@ -2167,6 +2184,27 @@ document.addEventListener("click", async e => {
     case "theme": toggleTheme(); break;
     case "np-open": if (isEditor()){ S.addPerson = true; render(); $("#np-name")?.focus(); } break;
     case "np-close": S.addPerson = false; render(); break;
+    case "person-del-ask": S.delPerson = b.dataset.id; render(); break;
+    case "person-del-no": S.delPerson = null; render(); break;
+    case "toggle-archived": e.preventDefault(); S.showArchived = !S.showArchived; render(); break;
+    case "person-archive": {
+      const p = S.items.find(i => String(i.id) === b.dataset.id); if (!canManage(p)) break;
+      const on = b.dataset.on === "1"; S.busy.add("mg-" + p.id); render();
+      try { await archiveWrite(p.id, on); p.gone = on; toast(on ? `Archived ${p.fullName}` : `Restored ${p.fullName}`); }
+      catch(err){ toast("Couldn't save that. " + err.message, true); }
+      S.busy.delete("mg-" + p.id); render(); break;
+    }
+    case "person-del-yes": {
+      const p = S.items.find(i => String(i.id) === b.dataset.id); if (!canManage(p)) break;
+      S.busy.add("mg-" + p.id); render();
+      try {
+        await API.deleteItem(p.id);
+        S.items = S.items.filter(i => i !== p); S.delPerson = null; S.busy.delete("mg-" + p.id);
+        toast(`Deleted ${p.fullName}`);
+        const prev = S.stack.pop() || { view: "home" }; go(prev.view, prev.arg, false);
+      } catch(err){ S.busy.delete("mg-" + p.id); toast("Couldn't delete. " + err.message, true); render(); }
+      break;
+    }
     case "share-site": {
       const em = b.dataset.email || "", w = window.open("", "_blank");
       try { if (em) await navigator.clipboard.writeText(em); } catch(e){}
@@ -2617,13 +2655,55 @@ const LINK_COL = "NameEmailLookupId";
 /* Admins: link Roster people whose email is waiting (added before they had access). Runs quietly after loading. */
 async function linkPendingPeople(){
   if (DEMO || !isEditor()) return;
-  const todo = S.items.filter(i => isProfile(i) && !i.personId && i.pendingEmail).slice(0, 10);
+  const todo = S.items.filter(i => isProfile(i) && !i.gone && !i.personId && i.pendingEmail).slice(0, 10);
   for (const p of todo){
     const id = await siteUserId(p.pendingEmail); if (!id) continue;
     try { await API.update(p.id, { [LINK_COL]: id }); p.personId = id; p.email = lc(p.pendingEmail); } catch(e){}
   }
 }
 /* About page (admins): help give someone without a linked account access to the SharePoint site. */
+/* Admins can archive someone (hidden from the Team Directory, birthdays and scheduling, but kept in the list
+   so they can be restored) or delete their Roster row. Archived = Status on their Roster row is set to Unavailable. */
+const goneName = n => !!n && S.items.some(i => isProfile(i) && i.gone && lc(i.fullName) === lc(n)) && !S.items.some(i => isProfile(i) && !i.gone && lc(i.fullName) === lc(n));
+const canManage = p => isEditor() && !!p && p.id != null && !String(p.id).startsWith("p-") && isProfile(p) && p.editable !== false;
+async function archiveWrite(id, on){
+  const f = { Status: on ? "Unavailable" : null };
+  try { await API.update(id, f); }
+  catch(err){ if (on) throw err; const k = Object.keys(f)[0]; if (f[k] !== null) throw err; await API.update(id, { [k]: "" }); }
+}
+function goneNote(p){ return canManage(p) && p.gone ? `<div class="panel gone-note"><span class="pill">Archived</span> Hidden from the Team Directory and scheduling.</div>` : ""; }
+function managePanel(p){
+  if (!canManage(p)) return "";
+  const busy = S.busy.has("mg-" + p.id), id = esc(p.id), nm = esc(p.fullName || "this person");
+  return `<section class="panel stack manage-panel"><h2 class="section-label" style="margin:0">Manage Team Member</h2>
+    <p class="sub" style="margin:0">${p.gone
+      ? `${nm} is archived, so they're hidden from the Team Directory and from scheduling. <b>Restore</b> brings them back.`
+      : `<b>Archive</b> hides ${nm} from the Team Directory and from scheduling but keeps their info, so you can restore them later. <b>Delete</b> removes their Roster row for good.`} Schedule rows they already have aren't changed.</p>
+    ${S.delPerson === p.id
+      ? `<div class="del-person">Delete ${nm}’s Roster row permanently?
+          <div class="actions"><button class="btn decline-soft" data-act="person-del-yes" data-id="${id}" ${busy ? "disabled" : ""}>${busy ? "Deleting…" : "Yes, Delete"}</button><button class="btn" data-act="person-del-no">Keep Them</button></div></div>`
+      : `<div class="actions"><button class="btn" data-act="person-archive" data-on="${p.gone ? "0" : "1"}" data-id="${id}" ${busy ? "disabled" : ""}>${busy ? "Saving…" : p.gone ? "Restore" : "Archive"}</button><button class="btn decline-soft" data-act="person-del-ask" data-id="${id}" ${busy ? "disabled" : ""}>Delete</button></div>`}
+  </section>`;
+}
+function archivedSection(){
+  if (!isEditor()) return "";
+  const list = S.items.filter(p => isProfile(p) && p.gone).sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
+  if (!list.length) return "";
+  const t = p => `<button class="tile" data-act="member" data-id="${p.id}">${avatar(p)}<span class="meta"><b>${esc(p.fullName)}</b></span></button>`;
+  return `<details class="archived-sec"${S.showArchived ? " open" : ""}><summary class="section-label" data-act="toggle-archived">Archived <span class="count">${list.length}</span></summary>
+    <p class="sub" style="margin:0 0 8px">Only admins see this. Open someone to restore or delete them.</p>
+    <div class="roster archived-roster">${list.map(t).join("")}</div></details>`;
+}
+/* Admin Home: people added with an email who can't sign in yet (the site hasn't been shared with them). */
+function waitingPanel(){
+  if (!isEditor()) return "";
+  const list = S.items.filter(p => isProfile(p) && !p.gone && !p.personId && p.pendingEmail);
+  if (!list.length) return "";
+  return `<section><h2 class="section-label">Waiting for Access <span class="count hot">${list.length}</span></h2>
+    <div class="list">${list.map(p => `<div class="panel wait-row">${avatar(p)}<div class="wait-info"><b>${esc(p.fullName)}</b><span class="sub" style="margin:0">${esc(p.pendingEmail)}</span></div>
+      <div class="wait-btns"><button class="btn blue" data-act="share-site" data-email="${esc(p.pendingEmail)}">Share</button><button class="btn" data-act="member" data-id="${esc(p.id)}">Open</button></div></div>`).join("")}</div>
+    <p class="sub" style="margin:6px 0 0">Tap <b>Share</b>, paste their email in SharePoint and tap Share. Once they accept and sign in, the app links them and they drop off this list.</p></section>`;
+}
 function accessPanel(p){
   if (!isEditor() || !p || p.personId || p.id == null || String(p.id).startsWith("p-")) return "";
   const em = p.pendingEmail || "";
