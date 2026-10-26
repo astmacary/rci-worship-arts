@@ -263,6 +263,13 @@ a.btn{text-decoration:none}
 .btn.accept{background:var(--go);border-color:var(--go);color:#FFFFFF}
 .btn.decline{background:var(--stop);border-color:var(--stop);color:#FFFFFF}
 .btn.decline-soft{color:var(--bad)}
+.sec-head.inline-chev .section-label{flex:none}
+.sec-head.inline-chev{justify-content:flex-start}
+.cal-roster .tile .av{aspect-ratio:4/3}
+.cal-roster .tile .av img{object-position:center 25%}
+.admin-row.c2.pos-closed .c2-dd{display:none}
+.admin-row.c2.pos-closed .c2-pospick{cursor:default}
+
 .access-flag{font-size:10px !important;padding:2px 8px !important;top:8px !important;right:8px !important;letter-spacing:.05em}
 .profile-hero:has(.access-flag){padding-top:30px}
 .access-box{text-align:center;align-items:center}
@@ -622,7 +629,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "57";
+const APP_VERSION = "58";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1658,18 +1665,18 @@ function viewMember(){
   const next = assignments().filter(i => i.date >= t && approved(i) && ((p.email && i.email === p.email) || i.fullName === p.fullName)).sort(byDate).slice(0,3);
   return `${backBar("About " + (p.first || firstOf(p.fullName)))}${goneNote(p)}
     <section class="panel profile-hero">${Onboarding.flag(p)}${avatar(p,"lg")}<h2>${esc(p.fullName)}</h2>${adminSlot(p)}
-      ${p.email && myProfile()?.id !== p.id ? `<a class="btn blue" href="mailto:${esc(p.email)}">${ICON.mail}Email Me</a><span class="sub email-addr">${esc(p.email)}</span>` : ""}</section>${Onboarding.panel(p)}
+      ${p.email && myProfile()?.id !== p.id ? `<a class="btn blue" href="mailto:${esc(p.email)}">${ICON.mail}Email Me</a>` : ""}</section>${Onboarding.panel(p)}
     <section class="panel"><dl class="kv">
-      <dt>First Name</dt><dd>${esc(p.first || "—")}</dd>
-      <dt>Email</dt><dd>${p.email ? `<a href="mailto:${esc(p.email)}" style="color:var(--accent);font-weight:600;word-break:break-all">${esc(p.email)}</a>` : "—"}</dd>
+      <dt>First Name</dt><dd>${esc(p.first || firstOf(p.fullName) || "—")}</dd>
       <dt>Birthday</dt><dd>${esc(bd)}</dd>
-      ${p.phone ? `<dt>Phone</dt><dd><a href="tel:${esc(p.phone.replace(/[^\d+]/g, ""))}" style="color:var(--accent);font-weight:600">${esc(p.phone)}</a></dd>` : ""}
+      ${(() => { const em = p.email || p.pendingEmail || ""; return `<dt>Email</dt><dd>${em ? `<a href="mailto:${esc(em)}" style="color:var(--accent);font-weight:600;word-break:break-all">${esc(em)}</a>` : "—"}</dd>`; })()}
+      <dt>Phone</dt><dd>${p.phone ? `<a href="tel:${esc(p.phone.replace(/[^\d+]/g, ""))}" style="color:var(--accent);font-weight:600">${esc(p.phone)}</a>` : "—"}</dd>
     </dl></section>
-    ${isEditor() ? memberAdmin(p) : `<section><h2 class="section-label">Roles</h2>
-      ${(p.positions || []).length ? `<ul class="panel rows">${p.positions.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">No roles listed yet.</div>`}</section>`}
     ${likesSection(p)}
     ${wallSection(p)}
     ${next.length ? `<section><h2 class="section-label">Serving Next</h2><div class="list">${next.map(i=>`<div class="panel" style="padding:10px 14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><b>${esc(i.role)}</b><span class="sub" style="margin:0">${esc(fmtShort(i.date))}</span></div>`).join("")}</div></section>` : ""}
+    ${isEditor() ? memberAdmin(p) : `<section><h2 class="section-label">Roles</h2>
+      ${(p.positions || []).length ? `<ul class="panel rows">${p.positions.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<div class="empty">No roles listed yet.</div>`}</section>`}
     ${managePanel(p)}`;
 }
 
@@ -1871,8 +1878,8 @@ function calSection(i){
 function calSections(list){
   return ["Worship Leaders", "Singers", "Musicians", "Others"].map(h => {
     const part = list.filter(i => calSection(i) === h).sort(nameCmp);
-    const body = p => `<div class="roster">${p.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`;
-    return part.length ? secBlock(`cal:${h}`, h, part.length, h === "Singers" ? singersBody(part, body, "cal") : body(part)) : "";
+    const body = p => `<div class="roster cal-roster">${p.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`;
+    return part.length ? (h === "Singers" ? singerSections(part, body, "cal") : secBlock(`cal:${h}`, h, part.length, body(part))) : "";
   }).join("");
 }
 /* Singers split by voice part: the position on the row if it's Soprano/Alto/Tenor, otherwise their Roster tag (first of the three). */
@@ -1880,6 +1887,13 @@ const VOICES = ["Soprano", "Alto", "Tenor"];
 function voiceOf(i){
   const ps = i.positions || [], roles = rosterOf(i)?.positions || [];
   return VOICES.find(v => ps.includes(v)) || VOICES.find(v => roles.includes(v)) || "";
+}
+/* Sopranos, Altos and Tenors as their own top-level sections (no "Singers" heading). */
+function singerSections(part, html, scope){
+  const groups = VOICES.map(v => [v, part.filter(i => voiceOf(i) === v)]).filter(([, p]) => p.length);
+  const rest = part.filter(i => !voiceOf(i));
+  const blk = (sec, label, p) => secBlock(`${scope}:Singers:${sec}`, label, p.length, (scope === "admin" ? purgeBar("Singers", p, "Singers:" + sec, label) : "") + html(p));
+  return groups.map(([v, p]) => blk(v, v + "s", p)).join("") + (rest.length ? blk("-", "Other Singers", rest) : "");
 }
 function singersBody(part, html, scope){
   const groups = VOICES.map(v => [v, part.filter(i => voiceOf(i) === v)]).filter(([, p]) => p.length);
@@ -1922,12 +1936,13 @@ function purgePlan(h, part){
     return blank && elsewhere ? { hide: i._hk || i._key } : { del: i.id };
   });
 }
-function purgeBar(h, part){
+const purgePart = sec => { const [h, v] = sec.split(":"); return ADMIN_SLOTS.filter(i => sectionOf(i) === h && (!v || (v === "-" ? !voiceOf(i) : voiceOf(i) === v))); };
+function purgeBar(h, part, sec = h, label = h){
   const plan = purgePlan(h, part); if (!plan.length) return "";
-  const n = plan.length, date = part[0]?.date, label = h === "N/S" ? "N/S" : h;
-  if (S.purgeAsk !== h) return `<button type="button" class="btn purge-btn" data-act="purge-ask" data-sec="${esc(h)}">${ICON.trash}Remove ${n} not confirmed</button>`;
+  const n = plan.length, date = part[0]?.date;
+  if (S.purgeAsk !== sec) return `<button type="button" class="btn purge-btn" data-act="purge-ask" data-sec="${esc(sec)}">${ICON.trash}Remove ${n} not confirmed</button>`;
   return `<div class="confirm-row purge-ask">Remove the ${n} ${esc(label)} ${n === 1 ? "card" : "cards"} not confirmed on ${esc(fmtShort(date))}? Confirmed people stay.
-    <button type="button" class="btn decline-soft" data-act="purge-yes" data-sec="${esc(h)}" ${S.purgeBusy ? "disabled" : ""}>${S.purgeBusy ? "Removing…" : "Yes, Remove"}</button>
+    <button type="button" class="btn decline-soft" data-act="purge-yes" data-sec="${esc(sec)}" ${S.purgeBusy ? "disabled" : ""}>${S.purgeBusy ? "Removing…" : "Yes, Remove"}</button>
     <button type="button" class="btn" data-act="purge-no" ${S.purgeBusy ? "disabled" : ""}>Keep Them</button></div>`;
 }
 function sectioned(list, html, scope = "admin"){
@@ -1939,7 +1954,7 @@ function sectioned(list, html, scope = "admin"){
   const noSingersYet = !list.some(i => sectionOf(i) === "Singers" && approved(i));
   const heads = noSingersYet ? SECTIONS.map(h => h === "Singers" ? "Musicians" : h === "Musicians" ? "Singers" : h) : SECTIONS;
   return heads.map(h => { const part = ranked.filter(i => sectionOf(i) === h); if (h === "Singers") part.sort(byName); return part.length
-    ? secBlock(`${scope}:${h}`, h, part.length, (scope === "admin" ? purgeBar(h, part) : "") + (h === "Singers" ? singersBody(part, html, scope) : html(part))) : ""; }).join("");
+    ? (h === "Singers" ? singerSections(part, html, scope) : secBlock(`${scope}:${h}`, h, part.length, (scope === "admin" ? purgeBar(h, part) : "") + html(part))) : ""; }).join("");
 }
 function posSelect(i, sid, dis){
   const cur = posValue(i), groups = posGroups(i);
@@ -2074,7 +2089,7 @@ function secClosed(){
 }
 function secBlock(key, label, n, body, sub){
   const closed = secClosed().has(key);
-  return `<section class="role-sec${sub ? " sub-sec" : ""}"><button type="button" class="sec-head" data-act="sec-toggle" data-sec="${esc(key)}" aria-expanded="${!closed}"><h2 class="section-label">${esc(label)} <span class="count">${n}</span></h2><span class="sec-chev" aria-hidden="true">${ICON.next}</span></button>${closed ? "" : body}</section>`;
+  return `<section class="role-sec${sub ? " sub-sec" : ""}"><button type="button" class="sec-head${key.startsWith("cal:") ? " inline-chev" : ""}" data-act="sec-toggle" data-sec="${esc(key)}" aria-expanded="${!closed}"><h2 class="section-label">${esc(label)} <span class="count">${n}</span></h2><span class="sec-chev" aria-hidden="true">${ICON.next}</span></button>${closed ? "" : body}</section>`;
 }
 function adminAbsent(rows){
   const abs = rows.filter(isAbsent);
@@ -2131,9 +2146,11 @@ function viewAdmin(){
     // The gold position line opens a drop-down of every position (locked cards: tap the pencil first).
     const grp = pre ? posCol(pre) : "";   // musicians see musician positions, singers see singing positions
     const allPos = (S.servingGroups || []).filter(g => g.col !== "LeaderPositions" && g.choices.length && (!grp || g.col === grp));
-    const posOpts = allPos.map(g => `<optgroup label="${esc(g.label)}">${g.choices.map(c => { const v = `${g.col}|${c}`; return `<option value="${esc(v)}" ${v === val ? "selected" : ""}>${esc(c)}</option>`; }).join("")}</optgroup>`).join("");
+    const optsOf = g => g.choices.filter(c => !(g.col === "SingingPositions" && lc(c) === "worship leader")).map(c => { const v = `${g.col}|${c}`; return `<option value="${esc(v)}" ${v === val ? "selected" : ""}>${esc(c)}</option>`; }).join("");
+    const posOpts = grp ? allPos.map(optsOf).join("") : allPos.map(g => `<optgroup label="${esc(g.label)}">${optsOf(g)}</optgroup>`).join("");
+    const closedPos = pre && !locked && !(S.posOpen || new Set()).has(i._key);   // prefilled: the drop-down opens with the pencil
     const posField = pre
-      ? `<select class="c2-sel" data-f="Position" data-init="${done ? esc(val) : ""}" aria-label="Change ${esc(i.fullName || "this person")}'s position" ${locked ? "disabled" : ""}>${val && !allPos.some(g => g.choices.includes(pre)) ? `<option value="${esc(val)}" selected>${esc(pre)}</option>` : ""}${posOpts}</select>`
+      ? `<select class="c2-sel" data-f="Position" data-init="${done ? esc(val) : ""}" aria-label="Change ${esc(i.fullName || "this person")}'s position" ${locked || closedPos ? "disabled" : ""}>${val && !allPos.some(g => g.choices.includes(pre)) ? `<option value="${esc(val)}" selected>${esc(pre)}</option>` : ""}${posOpts}</select>`
       : posSelect(i, sid, locked ? "disabled" : "").replace("<select ", '<select class="c2-sel" ');
     const save = pre && !done && !locked
       ? `<button class="iconbtn notes-btn save-btn" type="submit" aria-label="Confirm ${esc(i.fullName || "")} as ${esc(pre)}" title="Confirm">${ICON.check}</button>`
@@ -2143,10 +2160,10 @@ function viewAdmin(){
       : `<button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${key}" aria-label="Delete this position" title="Delete">${ICON.trash}</button>`;
     const shown = pre || i.role || "";
     const multi = slots.filter(x => x.id === i.id).length > 1;
-    return `<form class="panel admin-row c2 ${locked ? "locked" : ""}" data-id="${sid}" data-key="${key}" data-pre="${esc(pre || "")}" ${i._new ? `data-new="${esc(pre)}"` : ""}>
+    return `<form class="panel admin-row c2 ${locked ? "locked" : ""} ${closedPos ? "pos-closed" : ""}" data-id="${sid}" data-key="${key}" data-pre="${esc(pre || "")}" ${i._new ? `data-new="${esc(pre)}"` : ""}>
       <div class="c2-main"><span class="c2-face" data-face>${faceFor(i.personId, i.fullName)}</span>
         <div class="c2-info"><b class="c2-name">${esc(i.fullName || "Not assigned")}</b><label class="c2-pospick" title="Choose a position"><span class="c2-pos" data-pos>${esc(shown || "Choose a position")}</span><span class="c2-dd" aria-hidden="true">${ICON.next}</span>${posField}</label><span class="sub c2-sub">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span></div>
-        <div class="c2-side">${i._new ? "" : statusPill(i)}<div class="c2-btns">${trash}${locked
+        <div class="c2-side">${i._new ? "" : statusPill(i)}<div class="c2-btns">${trash}${closedPos ? `<button class="iconbtn notes-btn" type="button" data-act="pos-open" data-key="${key}" aria-label="Change the position" title="Change position">${ICON.pencil}</button>` : ""}${locked
           ? `<button class="iconbtn notes-btn" type="button" data-act="admin-unlock" data-id="${sid}" aria-label="Edit this assignment" title="Edit">${ICON.pencil}</button>`
           : save}</div></div>
       </div>
@@ -2371,6 +2388,11 @@ document.addEventListener("click", async e => {
       catch(err){ toast("Couldn't save the notes. " + err.message, true); b.disabled = false; b.textContent = "Save Notes"; }
       break;
     }
+    case "pos-open": {
+      const row = b.closest(".admin-row"); (S.posOpen ||= new Set()).add(b.dataset.key);
+      row.classList.remove("pos-closed"); row.querySelectorAll("select").forEach(x => x.disabled = false);
+      b.remove(); row.querySelector("select")?.focus(); break;
+    }
     case "admin-unlock": {
       const row = b.closest(".admin-row");
       (S.adminUnlocked = S.adminUnlocked || new Set()).add(b.dataset.id);
@@ -2430,6 +2452,13 @@ document.addEventListener("click", async e => {
           auto = mus[0];
           f["MusicianPositions@odata.type"] = "Collection(Edm.String)"; f.MusicianPositions = [auto];
           f.Status = "Accepted"; f.Published = "Request Approved";
+        } else if (prof && !prof.gone && lc(prof.active) === "active"){
+          const voices = (prof.positions || []).filter(r => VOICES.includes(r));
+          if (voices.length === 1){
+            auto = voices[0];
+            f["SingingPositions@odata.type"] = "Collection(Edm.String)"; f.SingingPositions = [auto];
+            f.Status = "Accepted"; f.Published = "Request Approved";
+          }
         }
         return { f, who, prof, auto };
       });
@@ -2512,7 +2541,7 @@ document.addEventListener("click", async e => {
     case "purge-no": S.purgeAsk = null; render(); break;
     case "purge-yes": {
       if (!isEditor() || S.purgeBusy) break;
-      const h = b.dataset.sec, part = ADMIN_SLOTS.filter(i => sectionOf(i) === h), plan = purgePlan(h, part);
+      const sec = b.dataset.sec, h = sec.split(":")[0], part = purgePart(sec), plan = purgePlan(h, part);
       const dels = [...new Set(plan.filter(x => x.del).map(x => x.del))], hides = plan.filter(x => x.hide).map(x => x.hide);
       S.purgeBusy = true; render(); let ok = 0, bad = 0;
       hideCards(hides);
