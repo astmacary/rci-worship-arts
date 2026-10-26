@@ -583,7 +583,7 @@ const CONFIG = {
   announcementsListId: "e912e877-d00e-4971-bcd4-df25f621f03d",
   messagesListId: "",              // "Birthday Messages" list id; blank = Birthday Wall hidden (no such list on RCIMusicDept yet)
   // Only these sign-ins see the pencil to edit Announcements, Worship Notes and the schedule.
-  editors: ["ashley.stmacary@therampchurch.com"],
+  editors: ["ashley.stmacary@therampchurch.com", "cassie.carter.inc@gmail.com"],
   publishedDenied: "Request Declined",   // Published value written on Decline (this list's choice)
   // Positions live in three columns; a row's position is whatever is filled in, joined with " · ".
   positionCols: ["LeaderPositions", "SingingPositions", "MusicianPositions"],
@@ -603,7 +603,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "49";
+const APP_VERSION = "50";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1202,7 +1202,9 @@ function wallSection(p){
 function isEditor(){
   if (DEMO) return true;                       // demo lets anyone try the editor
   const ed = CONFIG.editors.map(lc);
-  return !!S.me && S.me.emails.some(e => ed.includes(lc(e)));
+  // Guests sign in as name_gmail.com#EXT#@tenant; compare that as name@gmail.com too.
+  const guest = e => { const m = lc(e).match(/^(.+)_([^_#]+\.[^_#]+)#ext#@/); return m ? `${m[1]}@${m[2]}` : lc(e); };
+  return !!S.me && S.me.emails.some(e => ed.includes(lc(e)) || ed.includes(guest(e)));
 }
 function annEditBtn(){
   if (!isEditor()) return "";
