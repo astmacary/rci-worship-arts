@@ -273,7 +273,7 @@ a.btn{text-decoration:none}
 .doc-link-wrap .dl-del{position:absolute;right:38px;top:50%;transform:translateY(-50%);width:32px;height:32px}
 .doc-link-wrap:has(.confirm-row) .dl-del{display:none}
 /* Next 7 Days on Home: theme-colored cards (navy date block, gold details) */
-.next7 .cue:not(.abs){border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));border-left:4px solid var(--accent);background:linear-gradient(135deg,var(--accent-soft),var(--surface) 72%);box-shadow:0 4px 16px -12px var(--accent)}
+.next7 .cue:not(.abs){border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));border-left:4px solid var(--accent);background:var(--surface);box-shadow:0 4px 16px -12px var(--accent)}
 .next7 .cue:not(.abs) .when{background:#0B1D33;color:#FFFFFF}
 .next7 .cue:not(.abs) .when .day{color:#D2B07C;font-size:32px}
 .next7 .cue:not(.abs) .when .dow,.next7 .cue:not(.abs) .when .mon{opacity:.9}
@@ -603,7 +603,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "47";
+const APP_VERSION = "48";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1870,13 +1870,35 @@ const nameCmp = (a, b) => (!a.fullName - !b.fullName) || (a.fullName || "").loca
 /* Edit Schedule: "Remove N not confirmed" at the top of a section. Rows that only show in this section are
    deleted; extra cards for someone who also shows in another section are just hidden (their row stays). */
 let ADMIN_SLOTS = [];
+/* Removed extra-role cards (e.g. "Worship Leader" for someone already confirmed as a musician) stay removed:
+   kept by date + name + role in Site Assets/app/hidden-cards.json, shared by every admin. */
+const hideKey = (date, name, role) => `${date}|${lc(name || "")}|${lc(role || "")}`;
+let HIDDEN = null, hiddenLoading = false;
+function hiddenCards(){
+  if (!HIDDEN && !hiddenLoading && isEditor()){ hiddenLoading = true;
+    (async () => { let list = []; if (!DEMO){ try { const id = await docLinksDrive(); list = await API.g(`/drives/${id}/root:/app/hidden-cards.json:/content`); } catch(e){ if (e.status !== 404) console.warn("Hidden cards:", e); } }
+      HIDDEN = new Set([...(Array.isArray(list) ? list : []), ...(HIDDEN || [])]); hiddenLoading = false; render(); })(); }
+  return HIDDEN || new Set();
+}
+async function hideCards(keys){
+  const add = keys.filter(Boolean); if (!add.length) return;
+  HIDDEN = new Set([...(HIDDEN || []), ...add]); render();
+  if (DEMO) return;
+  try {
+    const id = await docLinksDrive(), t = todayKey();
+    let cur = []; try { cur = await API.g(`/drives/${id}/root:/app/hidden-cards.json:/content`); } catch(e){ if (e.status !== 404) throw e; }
+    const all = [...new Set([...(Array.isArray(cur) ? cur : []), ...HIDDEN])].filter(k => k.slice(0, 10) >= t);   // drop past dates
+    await API.g(`/drives/${id}/root:/app/hidden-cards.json:/content`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(all) });
+    HIDDEN = new Set(all);
+  } catch(e){ toast("Removed for now, but couldn't save it for next time. " + e.message, true); }
+}
 function purgePlan(h, part){
   return part.filter(i => i._new || !approved(i)).map(i => {
-    if (i._new) return { hide: i._key };                       // extra card for a role they don't hold: hide it
+    if (i._new) return { hide: i._hk || i._key };                       // extra card for a role they don't hold: hide it
     const row = S.items.find(x => x.id === i.id);
     const blank = !(row?.positions || []).length;               // prefilled card on a row with no position yet
     const elsewhere = ADMIN_SLOTS.some(x => x.id === i.id && x._key !== i._key && sectionOf(x) !== h);
-    return blank && elsewhere ? { hide: i._key } : { del: i.id };
+    return blank && elsewhere ? { hide: i._hk || i._key } : { del: i.id };
   });
 }
 function purgeBar(h, part){
@@ -2076,8 +2098,8 @@ function viewAdmin(){
     const tags = (rosterOf(base)?.positions || []).filter(r => posCol(r) && !held.has(r));
     if (!tags.length){ if (blank) slots.push({ ...blank, _key: blank.id, _pos: "" }); return; }
     tags.forEach(r => {
-      const key = base.id + "|" + r; if ((S.hideSlots || new Set()).has(key) || replacedPos().has(replacedKey(base.date, base.fullName, r))) return;
-      slots.push({ ...base, positions: [r], role: r, status: blank ? blank.status : "", published: blank ? blank.published : "", _key: key, _pos: r, _new: !blank });
+      const key = base.id + "|" + r; if (hiddenCards().has(hideKey(base.date, base.fullName, r)) || replacedPos().has(replacedKey(base.date, base.fullName, r))) return;
+      slots.push({ ...base, positions: [r], role: r, status: blank ? blank.status : "", published: blank ? blank.published : "", _key: key, _hk: hideKey(base.date, base.fullName, r), _pos: r, _new: !blank });
     });
   });
   const card = i => {
@@ -2096,7 +2118,7 @@ function viewAdmin(){
       ? `<button class="iconbtn notes-btn save-btn" type="submit" aria-label="Confirm ${esc(i.fullName || "")} as ${esc(pre)}" title="Confirm">${ICON.check}</button>`
       : saveIcon();
     const trash = i._new
-      ? `<button class="iconbtn trash-btn" type="button" data-act="slot-hide" data-key="${key}" aria-label="Hide this card" title="Remove">${ICON.trash}</button>`
+      ? `<button class="iconbtn trash-btn" type="button" data-act="slot-hide" data-key="${key}" data-hk="${esc(i._hk || "")}" aria-label="Hide this card" title="Remove">${ICON.trash}</button>`
       : `<button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${key}" aria-label="Delete this position" title="Delete">${ICON.trash}</button>`;
     const shown = pre || i.role || "";
     const multi = slots.filter(x => x.id === i.id).length > 1;
@@ -2355,7 +2377,7 @@ document.addEventListener("click", async e => {
       S.noSvcBusy = false; S.noSvcDel = null; render(); break;
     }
     case "row-del": S.rowDel = b.dataset.id; render(); break;
-    case "slot-hide": (S.hideSlots ||= new Set()).add(b.dataset.key); render(); break;
+    case "slot-hide": hideCards([b.dataset.hk || b.dataset.key]); render(); break;
     case "row-del-keep": S.rowDel = null; render(); break;
     case "row-del-yes": {
       if (!isEditor() || !item || isProfile(item)) break;
@@ -2472,7 +2494,7 @@ document.addEventListener("click", async e => {
       const h = b.dataset.sec, part = ADMIN_SLOTS.filter(i => sectionOf(i) === h), plan = purgePlan(h, part);
       const dels = [...new Set(plan.filter(x => x.del).map(x => x.del))], hides = plan.filter(x => x.hide).map(x => x.hide);
       S.purgeBusy = true; render(); let ok = 0, bad = 0;
-      hides.forEach(k => (S.hideSlots ||= new Set()).add(k));
+      hideCards(hides);
       for (let n = 0; n < dels.length; n += 6)
         await Promise.all(dels.slice(n, n + 6).map(async id => { try { await API.deleteItem(id); S.items = S.items.filter(i => i.id !== id); ok++; } catch(e){ bad++; } }));
       S.purgeBusy = false; S.purgeAsk = null;
