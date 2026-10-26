@@ -583,7 +583,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "40";
+const APP_VERSION = "41";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1651,7 +1651,7 @@ function viewAbsence(){
 }
 
 function viewDirectory(){
-  const people = S.items.filter(p => isProfile(p) && !p.gone).sort((a,b) => (a.fullName||"").localeCompare(b.fullName||""));
+  const people = S.items.filter(p => isProfile(p) && !p.gone && lc(p.active) !== "non active").sort((a,b) => (a.fullName||"").localeCompare(b.fullName||""));
   return `<div class="page-h"><h1>Team Directory</h1>${shareBtn()}</div>
     ${isEditor() ? newPersonForm() : ""}
     <p class="sub" style="margin-top:-10px">${people.length} team members</p>
