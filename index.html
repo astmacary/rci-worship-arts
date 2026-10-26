@@ -581,7 +581,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "38";
+const APP_VERSION = "39";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1584,7 +1584,7 @@ function viewMember(){
   const bd = p.birthday ? fromKey(p.birthday).toLocaleDateString(undefined,{month:"long",day:"numeric"}) : "—";
   const t = todayKey();
   const next = assignments().filter(i => i.date >= t && approved(i) && ((p.email && i.email === p.email) || i.fullName === p.fullName)).sort(byDate).slice(0,3);
-  return `${backBar("About " + (p.first || firstOf(p.fullName)))}${accessPanel(p)}${goneNote(p)}
+  return `${backBar("About " + (p.first || firstOf(p.fullName)))}${goneNote(p)}
     <section class="panel profile-hero">${avatar(p,"lg")}<h2>${esc(p.fullName)}</h2>
       ${p.email && myProfile()?.id !== p.id ? `<a class="btn blue" href="mailto:${esc(p.email)}">${ICON.mail}Email Me</a><span class="sub email-addr">${esc(p.email)}</span>` : ""}</section>
     <section class="panel"><dl class="kv">
@@ -1838,6 +1838,18 @@ function posSelect(i, sid, dis){
   </select>`;
 }
 /* Which position column a role belongs to ("" if it's not a singing or musician role). */
+/* Positions an admin changed away from on Edit Schedule (date|name|position), so that tagged role's card
+   isn't offered again for that person on that date. Kept on this device. */
+const REPLACED_KEY = "replaced-pos:" + location.pathname;
+const replacedKey = (date, name, pos) => `${date}|${lc(name || "")}|${lc(pos || "")}`;
+function replacedPos(){
+  if (!S.replacedSet){ try { S.replacedSet = new Set(JSON.parse(localStorage.getItem(REPLACED_KEY) || "[]")); } catch(_){ S.replacedSet = new Set(); } }
+  return S.replacedSet;
+}
+function rememberReplaced(date, name, pos){
+  const set = replacedPos(); set.add(replacedKey(date, name, pos));
+  try { localStorage.setItem(REPLACED_KEY, JSON.stringify([...set].slice(-300))); } catch(_){}
+}
 function posCol(pos){
   const g = c => (S.servingGroups || []).find(x => x.col === c)?.choices || [];
   return g("SingingPositions").includes(pos) ? "SingingPositions" : g("MusicianPositions").includes(pos) ? "MusicianPositions" : "";
@@ -1993,7 +2005,7 @@ function viewAdmin(){
     const tags = (rosterOf(base)?.positions || []).filter(r => posCol(r) && !held.has(r));
     if (!tags.length){ if (blank) slots.push({ ...blank, _key: blank.id, _pos: "" }); return; }
     tags.forEach(r => {
-      const key = base.id + "|" + r; if ((S.hideSlots || new Set()).has(key)) return;
+      const key = base.id + "|" + r; if ((S.hideSlots || new Set()).has(key) || replacedPos().has(replacedKey(base.date, base.fullName, r))) return;
       slots.push({ ...base, positions: [r], role: r, status: blank ? blank.status : "", published: blank ? blank.published : "", _key: key, _pos: r, _new: !blank });
     });
   });
@@ -2003,7 +2015,8 @@ function viewAdmin(){
     const val = pre ? posCol(pre) + "|" + pre : "";
     const done = !i._new && approved(i) && (i.positions || []).length === 1 && i.positions[0] === pre;
     // The gold position line opens a drop-down of every position (locked cards: tap the pencil first).
-    const allPos = (S.servingGroups || []).filter(g => g.col !== "LeaderPositions" && g.choices.length);
+    const grp = pre ? posCol(pre) : "";   // musicians see musician positions, singers see singing positions
+    const allPos = (S.servingGroups || []).filter(g => g.col !== "LeaderPositions" && g.choices.length && (!grp || g.col === grp));
     const posOpts = allPos.map(g => `<optgroup label="${esc(g.label)}">${g.choices.map(c => { const v = `${g.col}|${c}`; return `<option value="${esc(v)}" ${v === val ? "selected" : ""}>${esc(c)}</option>`; }).join("")}</optgroup>`).join("");
     const posField = pre
       ? `<select class="c2-sel" data-f="Position" data-init="${done ? esc(val) : ""}" aria-label="Change ${esc(i.fullName || "this person")}'s position" ${locked ? "disabled" : ""}>${val && !allPos.some(g => g.choices.includes(pre)) ? `<option value="${esc(val)}" selected>${esc(pre)}</option>` : ""}${posOpts}</select>`
@@ -2016,7 +2029,7 @@ function viewAdmin(){
       : `<button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${key}" aria-label="Delete this position" title="Delete">${ICON.trash}</button>`;
     const shown = pre || i.role || "";
     const multi = slots.filter(x => x.id === i.id).length > 1;
-    return `<form class="panel admin-row c2 ${locked ? "locked" : ""}" data-id="${sid}" data-key="${key}" ${i._new ? `data-new="${esc(pre)}"` : ""}>
+    return `<form class="panel admin-row c2 ${locked ? "locked" : ""}" data-id="${sid}" data-key="${key}" data-pre="${esc(pre || "")}" ${i._new ? `data-new="${esc(pre)}"` : ""}>
       <div class="c2-main"><span class="c2-face" data-face>${faceFor(i.personId, i.fullName)}</span>
         <div class="c2-info"><b class="c2-name">${esc(i.fullName || "Not assigned")}</b><label class="c2-pospick" title="Choose a position"><span class="c2-pos" data-pos>${esc(shown || "Choose a position")}</span><span class="c2-dd" aria-hidden="true">${ICON.next}</span>${posField}</label><span class="sub c2-sub">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span></div>
         <div class="c2-side">${i._new ? "" : statusPill(i)}<div class="c2-btns">${trash}${locked
@@ -2617,7 +2630,10 @@ document.addEventListener("submit", async e => {
   }
   if (e.target.classList.contains("admin-row") && e.target.dataset.new){
     if (!isEditor()) return;
-    const base = S.items.find(i => i.id === e.target.dataset.id), pos = e.target.dataset.new, col = posCol(pos); if (!base || !col) return;
+    const picked = e.target.querySelector('[data-f="Position"]')?.value || "";
+    const pos = picked.includes("|") ? picked.split("|")[1] : e.target.dataset.new;
+    const base = S.items.find(i => i.id === e.target.dataset.id), col = posCol(pos); if (!base || !col) return;
+    if (pos !== e.target.dataset.new) rememberReplaced(base.date, base.fullName, e.target.dataset.new);
     const btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true; btn.classList.add("busy");
     const f = { ServiceDate: toSp(base.date), ServiceCategory: base.category || null, FullName: base.fullName || null, [col + "@odata.type"]: "Collection(Edm.String)", [col]: [pos], Status: "Accepted", Published: "Request Approved" };
     if (base.personId) f.NameEmailLookupId = String(base.personId);
@@ -2665,6 +2681,7 @@ document.addEventListener("submit", async e => {
     btn.disabled = true; btn.classList.add("busy");
     try {
       await API.updateAssignment(item.id, fields);
+      const was = e.target.dataset.pre; if (was && next.role && next.role !== was) rememberReplaced(item.date, item.fullName, was);
       Object.assign(item, next);
       const u = (S.users || []).find(u => u.id === next.personId) || S.items.find(i => isProfile(i) && i.personId === next.personId);
       item.email = next.personId ? lc(u ? u.email : item.email) : "";
