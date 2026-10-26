@@ -263,6 +263,13 @@ a.btn{text-decoration:none}
 .btn.accept{background:var(--go);border-color:var(--go);color:#FFFFFF}
 .btn.decline{background:var(--stop);border-color:var(--stop);color:#FFFFFF}
 .btn.decline-soft{color:var(--bad)}
+.info-card{position:relative}
+.info-card.is-editing{display:none}
+.info-card .card-edit{position:absolute;top:10px;right:10px;width:32px;height:32px}
+.info-card .card-edit svg{width:15px;height:15px}
+.tile.abs-tile .av{aspect-ratio:4/3}
+.tile.abs-tile .av img{object-position:center 25%}
+
 .sec-head.inline-chev .section-label{flex:none}
 .sec-head.inline-chev{justify-content:flex-start}
 .cal-roster .tile .av{aspect-ratio:4/3}
@@ -410,8 +417,8 @@ ul.ann li.ann-today{background:var(--accent-soft);border-left:4px solid var(--ac
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:0;overflow:hidden;text-align:left;display:flex;flex-direction:column;width:100%;min-width:0}
 .tile .av{width:100%;height:auto;aspect-ratio:1/1;border-radius:0;font-size:20px}
 .tile .meta{padding:5px 6px 7px;min-width:0;display:flex;flex-direction:column;gap:1px}
-.tile .meta b{font-weight:700;font-size:11.5px;line-height:1.2;overflow-wrap:break-word;hyphens:auto}
-.tile .meta small{color:var(--muted);font-size:10.5px;line-height:1.25;overflow-wrap:break-word;hyphens:auto}
+.tile .meta b{font-weight:700;font-size:11.5px;line-height:1.2;overflow-wrap:break-word;hyphens:none;-webkit-hyphens:none}
+.tile .meta small{color:var(--muted);font-size:10.5px;line-height:1.25;overflow-wrap:break-word;hyphens:none;-webkit-hyphens:none}
 @media (max-width:359px){.tile .meta b{font-size:10.5px}.tile .meta small{font-size:9.5px}}
 /* People rows */
 .person{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;width:100%;text-align:left}
@@ -629,7 +636,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "58";
+const APP_VERSION = "59";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1666,7 +1673,7 @@ function viewMember(){
   return `${backBar("About " + (p.first || firstOf(p.fullName)))}${goneNote(p)}
     <section class="panel profile-hero">${Onboarding.flag(p)}${avatar(p,"lg")}<h2>${esc(p.fullName)}</h2>${adminSlot(p)}
       ${p.email && myProfile()?.id !== p.id ? `<a class="btn blue" href="mailto:${esc(p.email)}">${ICON.mail}Email Me</a>` : ""}</section>${Onboarding.panel(p)}
-    <section class="panel"><dl class="kv">
+    ${cardEditForm(p)}<section class="panel info-card ${S.cardEdit === p.id ? "is-editing" : ""}">${cardEditBtn(p)}<dl class="kv">
       <dt>First Name</dt><dd>${esc(p.first || firstOf(p.fullName) || "—")}</dd>
       <dt>Birthday</dt><dd>${esc(bd)}</dd>
       ${(() => { const em = p.email || p.pendingEmail || ""; return `<dt>Email</dt><dd>${em ? `<a href="mailto:${esc(em)}" style="color:var(--accent);font-weight:600;word-break:break-all">${esc(em)}</a>` : "—"}</dd>`; })()}
@@ -1922,7 +1929,7 @@ async function hideCards(keys){
   try {
     const id = await docLinksDrive(), t = todayKey();
     let cur = []; try { cur = await API.g(`/drives/${id}/root:/app/hidden-cards.json:/content`); } catch(e){ if (e.status !== 404) throw e; }
-    const all = [...new Set([...(Array.isArray(cur) ? cur : []), ...HIDDEN])].filter(k => k.slice(0, 10) >= t);   // drop past dates
+    const all = [...new Set([...(Array.isArray(cur) ? cur : []), ...HIDDEN])].filter(k => k.slice(0, 10) >= addDays(t, -120));   // keep removals for past dates too (drop after ~4 months)
     await API.g(`/drives/${id}/root:/app/hidden-cards.json:/content`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(all) });
     HIDDEN = new Set(all);
   } catch(e){ toast("Removed for now, but couldn't save it for next time. " + e.message, true); }
@@ -2123,15 +2130,18 @@ function viewAdmin(){
   const slots = [], byPerson = new Map();
   rows.forEach(i => { const key = lc(i.fullName || "") || "#" + i.id; if (!byPerson.has(key)) byPerson.set(key, []); byPerson.get(key).push(i); });
   byPerson.forEach(list => {
-    const held = new Set(); let blank = null;
+    const held = new Set(), doneCols = new Set(); let blank = null;
     list.forEach(i => {
       const ps = i.positions || [];
+      // Confirmed in a musician or voice position: no extra cards for other roles in that same group
+      // (confirmed on Keys = no Organ card; confirmed Alto = no Soprano card). Worship Leader still gets its own card.
+      if (approved(i)) ps.filter(x => lc(x) !== "worship leader").forEach(x => { const c = posCol(x); if (c) doneCols.add(c); });
       if (ps.length || lc(i.status || "") === lc(CONFIG.notServingPosition)){ ps.forEach(x => held.add(x)); slots.push({ ...i, _key: i.id, _pos: ps.length === 1 && posCol(ps[0]) ? ps[0] : "" }); }
       else if (!blank) blank = i;
       else slots.push({ ...i, _key: i.id, _pos: "" });
     });
     const base = blank || list[0];
-    const tags = (rosterOf(base)?.positions || []).filter(r => posCol(r) && !held.has(r));
+    const tags = (rosterOf(base)?.positions || []).filter(r => posCol(r) && !held.has(r) && (lc(r) === "worship leader" || !doneCols.has(posCol(r))));
     if (!tags.length){ if (blank) slots.push({ ...blank, _key: blank.id, _pos: "" }); return; }
     tags.forEach(r => {
       const key = base.id + "|" + r; if (hiddenCards().has(hideKey(base.date, base.fullName, r)) || replacedPos().has(replacedKey(base.date, base.fullName, r))) return;
@@ -2148,7 +2158,7 @@ function viewAdmin(){
     const allPos = (S.servingGroups || []).filter(g => g.col !== "LeaderPositions" && g.choices.length && (!grp || g.col === grp));
     const optsOf = g => g.choices.filter(c => !(g.col === "SingingPositions" && lc(c) === "worship leader")).map(c => { const v = `${g.col}|${c}`; return `<option value="${esc(v)}" ${v === val ? "selected" : ""}>${esc(c)}</option>`; }).join("");
     const posOpts = grp ? allPos.map(optsOf).join("") : allPos.map(g => `<optgroup label="${esc(g.label)}">${optsOf(g)}</optgroup>`).join("");
-    const closedPos = pre && !locked && !(S.posOpen || new Set()).has(i._key);   // prefilled: the drop-down opens with the pencil
+    const closedPos = false;   // unconfirmed cards show only the check mark; confirmed (locked) cards show only the pencil
     const posField = pre
       ? `<select class="c2-sel" data-f="Position" data-init="${done ? esc(val) : ""}" aria-label="Change ${esc(i.fullName || "this person")}'s position" ${locked || closedPos ? "disabled" : ""}>${val && !allPos.some(g => g.choices.includes(pre)) ? `<option value="${esc(val)}" selected>${esc(pre)}</option>` : ""}${posOpts}</select>`
       : posSelect(i, sid, locked ? "disabled" : "").replace("<select ", '<select class="c2-sel" ');
@@ -2639,6 +2649,8 @@ document.addEventListener("click", async e => {
       catch(err){ toast("Couldn't save that. " + err.message, true); }
       S.busy.delete("adm-" + p.id); render(); break;
     }
+    case "card-edit": S.cardEdit = b.dataset.id; render(); $("#ce-bday")?.focus(); break;
+    case "card-edit-cancel": S.cardEdit = null; render(); break;
     case "share-app": shareApp(); break;
     case "install-hide": S.installHidden = true; render(); break;
     case "ask-decline": S.confirm = item.id; render(); break;
@@ -2683,6 +2695,20 @@ document.addEventListener("click", async e => {
 
 document.addEventListener("submit", async e => {
   e.preventDefault();
+  if (e.target.id === "cardEditForm"){
+    const p = S.items.find(i => String(i.id) === e.target.dataset.id); if (!p || !canEditCard(p)) return;
+    const bday = $("#ce-bday").value, phone = $("#ce-phone").value.trim(), emEl = $("#ce-email"), em = emEl && !emEl.disabled ? emEl.value.trim().toLowerCase() : null;
+    if (em && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){ toast("That email doesn't look right.", true); return; }
+    const f = { Birthday: toSp(bday), PhoneNumber: phone || null };
+    if (em && em !== (p.pendingEmail || "")) Object.assign(f, { Title: em });   // Title holds an email until it is linked
+    const btn = $("#ce-save"); btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      await API.update(p.id, f);
+      Object.assign(p, { birthday: bday, phone }); if (em !== null){ p.pendingEmail = em; if (!p.personId) p.email = em; }
+      S.cardEdit = null; toast(`Saved ${p.fullName}’s info`); render();
+    } catch(err){ toast("Couldn't save. " + err.message, true); btn.disabled = false; btn.textContent = "Save"; }
+    return;
+  }
   if (e.target.id === "newPersonForm"){
     if (!isEditor()) return;
     const name = $("#np-name").value.trim().replace(/\s+/g, " "), email = $("#np-email").value.trim();
@@ -3151,6 +3177,23 @@ function adminControl(p){
   else body = `<p class="hint" style="margin:0">${on ? `${nm} can edit the schedule, announcements and the team.` : `Admins can edit the schedule, announcements and the team.`}</p>
       <div class="actions"><button class="btn ${on ? "decline-soft" : "blue"}" data-act="admin-set" data-id="${esc(p.id)}" data-on="${on ? "0" : "1"}" ${busy ? "disabled" : ""}>${busy ? "Saving…" : on ? "Remove Admin" : "★ Make Admin"}</button></div>`;
   return `<section class="panel stack admin-ctl"><h2 class="section-label" style="margin:0">Admin Privileges</h2>${body}</section>`;
+}
+/* Admins: edit a team member's About card (birthday, phone; email too while it isn't linked to a sign-in). */
+const canEditCard = p => isEditor() && !!p && p.id != null && !String(p.id).startsWith("p-") && isProfile(p) && p.editable !== false;
+function cardEditBtn(p){
+  return canEditCard(p) && S.cardEdit !== p.id ? `<button type="button" class="iconbtn card-edit" data-act="card-edit" data-id="${esc(p.id)}" aria-label="Edit ${esc(p.fullName || "")}'s info" title="Edit">${ICON.pencil}</button>` : "";
+}
+function cardEditForm(p){
+  if (!canEditCard(p) || S.cardEdit !== p.id) return "";
+  const linked = !!p.personId, em = p.email || p.pendingEmail || "";
+  return `<form class="panel stack" id="cardEditForm" data-id="${esc(p.id)}">
+      <h2 class="section-label" style="margin:0">Edit ${esc(p.first || firstOf(p.fullName) || "Their")}’s Info</h2>
+      
+      <div class="field"><label for="ce-bday">Birthday</label><input id="ce-bday" type="date" value="${esc(p.birthday || "")}"></div>
+      <div class="field"><label for="ce-email">Email</label><input id="ce-email" type="email" maxlength="200" value="${esc(em)}" ${linked ? "disabled" : ""}>
+        ${linked ? `<span class="hint">Linked to their sign-in, so it can't be changed here.</span>` : ""}</div>
+      <div class="field"><label for="ce-phone">Phone Number</label><input id="ce-phone" type="tel" maxlength="255" value="${esc(p.phone || "")}"></div>
+      <div class="actions"><button class="btn blue" type="submit" id="ce-save">Save</button><button class="btn" type="button" data-act="card-edit-cancel">Cancel</button></div></form>`;
 }
 /* "Admin" tag on the profile of anyone in CONFIG.editors (matched by their linked or pending email). */
 function adminTag(p){
