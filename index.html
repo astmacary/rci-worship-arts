@@ -556,6 +556,8 @@ const CONFIG = {
   profileCategory: "Birthday",       // Service Category of each person's profile (Roster) row; "🎂 Birthday" also works
   noServiceCategory: "No Service",  // Service Category marking a date with no service  // Service Category used for each person's profile row
   notesRole: "Worship & Arts Director",// role whose Notes hold the run sheet / set list
+  notesTitle: "Coordinator",       // each service date's notes live on a row with this Title (like item 382), no name or position
+  docsLinks: [ { title: "RCI Worship Team 2026", url: "https://docs.google.com/document/d/1AAXDwnqa62fKl9FhQVBcLS1tcpydXEhdtARlHeQ3q54/edit?tab=t.91g4btc1y85i", note: "Google Doc · schedule, set lists, song lists" } ],
   notesMarker: "SET LIST",         // notes are shown from this text onward
   // Home-screen announcements come from the "Announcements" SharePoint list on the same site.
   announcementsListId: "e912e877-d00e-4971-bcd4-df25f621f03d",
@@ -581,7 +583,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "39";
+const APP_VERSION = "40";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1026,7 +1028,7 @@ const approved = i => i.status === "Accepted" && i.published === "Request Approv
 const pending  = i => i.status === "Pending" && i.published === "Request Sent";
 const byDate = (a,b) => a.date.localeCompare(b.date) || a.role.localeCompare(b.role);
 const isAbsent = i => lc(i.category || "") === lc(CONFIG.absentCategory);
-const assignments = () => S.items.filter(i => !isProfile(i) && !isAbsent(i) && i.date);
+const assignments = () => S.items.filter(i => !isProfile(i) && !isAbsent(i) && i.date && !isNotesHolder(i));
 const myAbsences = () => S.items.filter(i => isAbsent(i) && i.date && mine(i));
 /* Absence page: admins can enter time off for another team member (S.absFor = that person's profile id). */
 const samePerson = (i, p) => !!p && ((!!p.email && i.email === p.email) || (!!i.fullName && !!p.fullName && lc(i.fullName) === lc(p.fullName)));
@@ -1268,35 +1270,11 @@ async function docsLoad(){
   D.loading = false; render();
 }
 function viewDocs(){
-  S.docs = S.docs || { path: [], items: null };
-  const D = S.docs;
-  if (!D.items && !D.loading) { setTimeout(docsLoad, 0); }
-  const crumbs = [CONFIG.docsFolder, ...D.path];
-  const path = D.path.length ? `<nav class="doc-path" aria-label="Folder">${crumbs.map((c, n) => n === crumbs.length - 1 ? `<b>${esc(c)}</b>` : `<button data-act="docs-up" data-n="${n}">${esc(c)}</button><span class="sep">›</span>`).join("")}</nav>` : "";
-  const rows = (D.items || []).map(it => {
-    const [cls, mark] = docKind(it);
-    const by = `<span class="doc-by"><span>Last updated ${esc(docAgo(it.lastModifiedDateTime))}</span></span>`;
-    const inner = `${it.folder ? `<span class="doc-ic ${cls}" aria-hidden="true">${mark}</span>` : ""}<span class="doc-meta"><b>${docPin(it) ? `<span class="doc-pin" title="Pinned">${ICON.pin}</span>` : ""}${esc(it.name.replace(/\.(docx|xlsx|pptx)$/i, ""))}</b>${it.folder ? `<span class="doc-by"><span>${it.folder.childCount ?? 0} item${it.folder.childCount === 1 ? "" : "s"}</span></span>` : by}</span><span class="chev">${ICON.next}</span>`;
-    return it.folder
-      ? `<button class="doc-row ${docPin(it) ? "pinned" : ""}" data-act="docs-open-folder" data-name="${esc(it.name)}">${inner}</button>`
-      : `<button class="doc-row ${docPin(it) ? "pinned" : ""}" data-act="docs-view" data-id="${esc(it.id)}">${inner}</button>`;
-  }).join("");
-  const adder = isEditor() ? `<section class="panel stack"><h2 class="section-label" style="margin:0">Add to ${esc(crumbs[crumbs.length - 1])}</h2>
-      <div class="doc-new">
-        <button class="btn" data-act="docs-new" data-kind="docx">New Word Doc</button>
-        <button class="btn" data-act="docs-new" data-kind="xlsx">New Spreadsheet</button>
-        <button class="btn" data-act="docs-new" data-kind="pptx">New Slides</button>
-        <label class="btn" for="docs-file" style="cursor:pointer">Upload File</label><input id="docs-file" type="file" multiple hidden>
-        <button class="btn" data-act="docs-folder">New Folder</button></div>
-      ${D.busy ? `<span class="hint">${esc(D.busy)}</span>` : ""}</section>` : "";
-  const back = D.path.length ? `<div class="page-h"><button class="back" data-act="docs-up" data-n="${D.path.length - 1}">${ICON.back}Back</button></div>` : "";
-  return `${back}<div class="page-h"><h1>${esc(D.path.length ? D.path[D.path.length - 1] : "Team Documents")}</h1><span style="flex:1"></span><button class="iconbtn" data-act="docs-refresh" aria-label="Refresh" title="Refresh">${ICON.refresh}</button></div>
-    ${path}
-    <p class="sub doc-tip" style="margin-top:-6px">Tap a document to read it here. To make changes, tap <b>Edit</b>; it opens in Word, Excel or PowerPoint, where everyone on the team can edit and you'll see who else is in it.</p>
-    ${D.loading && !D.items ? `<div class="empty">Loading documents…</div>`
-      : D.error ? `<div class="empty">Couldn't load the documents. ${esc(D.error)}</div>`
-      : rows ? `<div class="list">${rows}</div>` : `<div class="empty">No documents here yet.${isEditor() ? " Add one below." : ""}</div>`}
-    ${adder}`;
+  // Team documents now live in Google Docs (Oct 25): one link, opened in Google Docs.
+  const links = CONFIG.docsLinks || [];
+  return `<div class="page-h"><h1>Team Documents</h1></div>
+    ${links.length ? `<div class="list">${links.map(l => `<a class="doc-row pinned" href="${esc(l.url)}" target="_blank" rel="noopener"><span class="doc-meta"><b>${esc(l.title)}</b><span class="doc-by"><span>${esc(l.note || "Google Doc")}</span></span></span><span class="chev">${ICON.next}</span></a>`).join("")}</div>
+      <p class="sub" style="margin:0">Opens in Google Docs. To edit, you need edit access to the document in your Google account.</p>` : `<div class="empty">No documents yet.</div>`}`;
 }
 /* In-app reader: Microsoft's preview of the file, framed inside the app (read-only).
    Editing can't be framed (Microsoft blocks it), so Edit opens the file in Word/Excel/PowerPoint. */
@@ -1494,7 +1472,7 @@ function viewCalendar(){
       ? `<div class="bday-wrap">${bdayRow(p, "Birthday 🎂", null, true)}<button class="iconbtn chat-btn" data-act="wall" data-id="${p.id}" aria-label="Send ${esc(p.first || firstOf(p.fullName))} a birthday message" title="Send a birthday message">${ICON.chat}</button></div>`
       : bdayRow(p, "Birthday 🎂");
   }).join("");
-  const hasNotes = S.items.some(i => i.date === sel && isNotesRow(i) && (i.notes || isEditor()));
+  const hasNotes = isEditor() || S.items.some(i => i.date === sel && isNotesRow(i) && i.notes);
   return `<section class="panel cal-panel">
       <div class="cal-head"><h2>${m.toLocaleDateString(undefined,{month:"long",year:"numeric"})}</h2>
         <button class="btn" data-act="cal-today" style="padding:6px 10px">Today</button>
@@ -1532,11 +1510,15 @@ function cleanHtml(raw){
 
 function backBar(title){ return `<div class="page-h"><button class="back" data-act="back">${ICON.back}Back</button></div><div class="page-h"><h1>${esc(title)}</h1></div>`; }
 
-function isNotesRow(i){ return i.role === CONFIG.notesRole || (i.positions || []).includes(CONFIG.notesRole); }
-function notesRecord(k){ return S.items.find(i => i.date === k && isNotesRow(i)); }
+/* Each service date's notes are on a "Coordinator" row for that date (Title = Coordinator, no name, no position).
+   Older notes on the Worship & Arts Director row still show if a date has no Coordinator row yet. */
+const isNotesHolder = i => !!i.date && lc(i.role || "") === lc(CONFIG.notesTitle) && !i.fullName && !(i.positions || []).length;
+function isNotesRow(i){ return isNotesHolder(i) || i.role === CONFIG.notesRole || (i.positions || []).includes(CONFIG.notesRole); }
+function notesRecord(k){ return S.items.find(i => i.date === k && isNotesHolder(i)) || S.items.find(i => i.date === k && isNotesRow(i) && i.notes); }
 /* Notes show from the "SET LIST" marker on; editing changes that part and keeps anything before it. */
 function notesParts(rec){
   const all = (rec && rec.notes) || "";
+  if (rec && isNotesHolder(rec)) return { before: "", shown: all };   // Coordinator rows show everything
   const at = all.indexOf(CONFIG.notesMarker);
   return at >= 0 ? { before: all.slice(0, at), shown: all.slice(at) } : { before: "", shown: all };
 }
@@ -1544,7 +1526,7 @@ function viewNotes(){
   const k = S.arg, rec = notesRecord(k);
   const { shown } = notesParts(rec);
   const html = shown ? cleanHtml(shown) : "";
-  const canEdit = isEditor() && rec;
+  const canEdit = isEditor();   // a Coordinator row is created for the date on the first save
   const editing = canEdit && S.notesEdit === k;
   const pencil = canEdit ? (editing
       ? `<button class="iconbtn edit-on" data-act="notes-cancel" aria-label="Stop editing" title="Stop editing">${ICON.check}</button>`
@@ -1564,9 +1546,7 @@ function viewNotes(){
       <div class="panel notes notes-editor" id="notes-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Worship Notes">${start}</div>
       <div class="actions"><button class="btn blue" data-act="notes-save" data-date="${k}" id="notes-save">Save Notes</button><button class="btn" data-act="notes-cancel">Cancel</button></div>`;
   }
-  const empty = isEditor() && !rec
-    ? `No ${esc(CONFIG.notesRole)} is scheduled for this date, so there's no row to save notes on yet.`
-    : `No Worship Notes for this date yet.${canEdit ? " Tap the pencil to add them." : ""}`;
+  const empty = `No Worship Notes for this date yet.${canEdit ? " Tap the pencil to add them." : ""}`;
   return `${head}${html ? `<div class="panel notes">${html}</div>` : `<div class="empty">${empty}</div>`}`;
 }
 
@@ -1985,7 +1965,7 @@ function viewAdmin(){
   if (!dates.includes(S.adminDate)) dates.push(S.adminDate);
   const k = S.adminDate;
   const dayRows = S.items.filter(i => !isProfile(i) && i.date === k);
-  const rows = dayRows.filter(i => !isNoService(i) && !isAbsent(i)).sort((x, y) => Number(x.id) - Number(y.id));   // same order as the SharePoint list
+  const rows = dayRows.filter(i => !isNoService(i) && !isAbsent(i) && !isNotesHolder(i)).sort((x, y) => Number(x.id) - Number(y.id));   // same order as the SharePoint list
   const chips = dates.map(d => { const x = fromKey(d); return `<button class="date-chip ${d === k ? "on" : ""}" data-act="admin-date" data-date="${d}" aria-pressed="${d === k}"><span>${x.toLocaleDateString(undefined,{weekday:"short"})}</span><b>${x.getDate()}</b><span>${x.toLocaleDateString(undefined,{month:"short"})}</span></button>`; }).join("");
   // One card per position. Scheduled rows show as they are. For each person on this date, every singing or
   // musician role tagged on their Roster row that they don't hold yet gets its own prefilled card, so a Worship
@@ -2248,12 +2228,18 @@ document.addEventListener("click", async e => {
       break;
     }
     case "notes-save": {
-      const k = b.dataset.date, rec = notesRecord(k), ed = $("#notes-editor");
-      if (!rec || !ed) break;
+      const k = b.dataset.date, ed = $("#notes-editor");
+      let rec = S.items.find(i => i.date === k && isNotesHolder(i));
+      if (!ed || !isEditor()) break;
       const body = cleanHtml(ed.innerHTML).trim();
-      const html = notesParts(rec).before + body;
       b.disabled = true; b.textContent = "Saving…";
-      try { await API.update(rec.id, { Notes: html }); rec.notes = html; S.notesEdit = null; render(); toast("Worship Notes saved"); }
+      try {
+        if (!rec){
+          const id = await API.addItem({ Title: CONFIG.notesTitle, ServiceDate: toSp(k), ActiveStatus: "Non Active", Published: "--", Notes: body });
+          rec = normalize(id, {}); Object.assign(rec, { role: CONFIG.notesTitle, date: k, notes: body }); S.items.push(rec);
+        } else { await API.update(rec.id, { Notes: body }); rec.notes = body; }
+        S.notesEdit = null; render(); toast("Worship Notes saved");
+      }
       catch(err){ toast("Couldn't save the notes. " + err.message, true); b.disabled = false; b.textContent = "Save Notes"; }
       break;
     }
