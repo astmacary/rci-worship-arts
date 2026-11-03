@@ -722,7 +722,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "91";
+const APP_VERSION = "92";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1671,7 +1671,6 @@ function viewHome(){
       <div class="panel bday-panel"><p class="bday-msg">🎉 Happy Birthday! 🎂</p>
         <div class="list">${bdays.map(p => bdayRow(p, myProfile()?.id === p.id ? "That's you! Happy Birthday 🎂" : (CONFIG.messagesListId ? "Tap to wish them Happy Birthday 🎂" : "Tap to see their profile"), "wall")).join("")}</div></div></section>` : ""}
     ${myWall.length ? `<section><button class="person bday-row" data-act="wall" data-id="${myProfile().id}"><span class="wall-emoji" aria-hidden="true">💌</span><span class="meta"><b>You have ${myWall.length} birthday message${myWall.length > 1 ? "s" : ""}</b><small>Tap to read your Birthday Wall</small></span><span class="chev">${ICON.next}</span></button></section>` : ""}
-    ${waitingPanel()}
     ${""/* Pending Requests hidden on Home for now (Oct 25). To bring it back, restore:     <section><h2 class="section-label">Pending Requests <span class="count $ {pend.length?"hot":""}">$ {pend.length}</span></h2>
       $ {pend.length ? \`<div class="list">$ {pend.map(i=>cue(i)).join("")}</div>\` : \`<div class="empty">You have no pending requests right now.</div>\`}</section> */}
     <section class="fold-sec ${foldClosed("next7") ? "closed" : ""}">${foldHead("next7", "Next 7 Days", up.length, newUpCount(up) > 0)}
@@ -1970,6 +1969,7 @@ function viewDirectory(){
     ${isEditor() ? newPersonForm() : ""}
     <p class="sub" style="margin-top:-10px">${people.length} team members</p>
     ${people.length ? `<div class="roster">${people.map(p => `<button class="tile" data-act="member" data-id="${p.id}">${adminStar(p)}${avatar(p)}<span class="meta"><b>${esc(p.fullName)}</b></span></button>`).join("")}${isEditor() && !S.addPerson ? addTile() : ""}</div>` : isEditor() && !S.addPerson ? `<div class="roster">${addTile()}</div>` : `<div class="empty">No team members yet.</div>`}
+    ${waitingPanel()}
     ${archivedSection()}`;
 }
 
