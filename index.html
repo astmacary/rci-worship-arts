@@ -735,7 +735,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "101";
+const APP_VERSION = "102";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1827,6 +1827,7 @@ function viewCalendar(){
     <section><div class="day-h"><div class="day-t"><h2 class="section-label">${esc(fmtLong(sel))}</h2></div>
         ${hasNotes ? `<button class="iconbtn notes-btn" data-act="notes" data-date="${sel}" aria-label="Worship Notes for this day" title="Worship Notes">${ICON.notes}</button>` : ""}
         ${!isMeetHost() ? `<button class="iconbtn notes-btn ${S.meetAsk === sel ? "on" : ""}" data-act="meet-open" data-date="${sel}" aria-label="Request a meeting with ${MEET.with} on this day" title="Request a meeting with ${MEET.with}">${ICON_CHAT}</button>` : ""}
+        <button class="iconbtn notes-btn" data-act="tab" data-view="absence" aria-label="Request time off" title="Absence">${ICON.away}</button>
         ${isEditor() ? `<button class="iconbtn notes-btn" data-act="admin-open" data-date="${sel}" aria-label="Edit this day's schedule" title="Edit schedule">${ICON.pencil}</button>` : ""}</div>
       ${meetForm(sel)}
       ${ev.none ? `<div class="no-service"><span aria-hidden="true">❌</span> No Service</div>` : ""}
@@ -3388,20 +3389,26 @@ const newPill = () => `<span class="pill new-pill">NEW</span> `;
   if (document.body) document.body.appendChild(ind);
   let y0 = null, h = 0;
   const editing = t => t && t.closest && t.closest("input,textarea,select,[contenteditable='true'],iframe,.date-chips,.grid7");
+  // Nov 6: more forgiving at the top of the page (iPhone can report a fraction of a pixel of scroll), and a field that
+  // was used earlier but is no longer on screen doesn't block the pull.
+  const atTop = () => (window.scrollY || document.scrollingElement?.scrollTop || 0) <= 2;
+  const typing = () => { const a = document.activeElement; return !!(a && a !== document.body && a.isConnected && editing(a) && a.getBoundingClientRect().height > 0); };
   addEventListener("touchstart", e => {
-    y0 = (window.scrollY <= 0 && e.touches.length === 1 && !editing(e.target) && !editing(document.activeElement)) ? e.touches[0].clientY : null; h = 0;
+    y0 = (atTop() && e.touches.length === 1 && !editing(e.target) && !typing()) ? e.touches[0].clientY : null; h = 0;
   }, { passive: true });
   addEventListener("touchmove", e => {
     if (y0 == null) return;
     const dy = e.touches[0].clientY - y0;
-    if (dy <= 0 || window.scrollY > 0){ ind.style.height = "0"; h = 0; return; }
+    if (dy <= 0 || !atTop()){ ind.style.height = "0"; h = 0; return; }
     h = Math.min(dy * 0.5, 90); ind.style.height = h + "px";
     const ready = h >= 60; ind.classList.toggle("ready", ready);
     ind.firstChild.textContent = ready ? "↻ Release to refresh" : "↓ Pull to refresh";
   }, { passive: true });
+  addEventListener("touchcancel", () => { y0 = null; h = 0; ind.style.height = "0"; });
   addEventListener("touchend", () => {
     if (y0 == null) return; y0 = null;
-    if (h >= 60){ ind.firstChild.textContent = "Refreshing…"; ind.style.height = "48px"; setTimeout(() => location.reload(), 120); }
+    if (h >= 60){ ind.firstChild.textContent = "Refreshing…"; ind.style.height = "48px";
+      setTimeout(() => { try { location.reload(); } catch(_){} setTimeout(() => { location.href = location.href; }, 1500); }, 120); }
     else ind.style.height = "0";
     h = 0;
   });
