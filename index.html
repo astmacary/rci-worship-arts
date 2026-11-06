@@ -267,6 +267,25 @@ a.btn{text-decoration:none}
 .btn.accept{background:var(--go);border-color:var(--go);color:#FFFFFF}
 .btn.decline{background:var(--stop);border-color:var(--stop);color:#FFFFFF}
 .btn.decline-soft{color:var(--bad)}
+.home-icons{display:flex;gap:8px;flex:none;margin-top:2px}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .iconbtn.home-docs{color:#fff;border-color:#fff}}
+:root[data-theme="dark"] .iconbtn.home-docs{color:#fff;border-color:#fff}
+.mus-card{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
+.mus-main{display:flex;align-items:center;gap:10px}
+.mus-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.mus-info b{font-size:15px}
+.mus-inst{font-family:var(--display);font-weight:700;font-size:16px;color:var(--accent)}
+.mus-side{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.mus-flags{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:13.5px}
+.mus-btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn.mus-mark{font-size:13px;padding:5px 12px}
+.btn.mus-mark.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.mus-flag-form{display:flex;flex-direction:column;gap:6px}
+.mus-flag-form input{width:100%}
+.mus-flag-form .actions{display:flex;gap:8px;flex-wrap:wrap}
+.mus-pick-row{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted)}
+.mus-pick-row input{flex:0 1 180px}
+
 .home-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .home-top .home-docs{flex:none;margin-top:2px}
 .meet-form .meet-row{display:flex;gap:10px;flex-wrap:wrap}
@@ -735,7 +754,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "102";
+const APP_VERSION = "103";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1729,6 +1748,95 @@ function meetMinePanel(){
         <div class="meet-who"><div><b>${meetLine(m)}</b><span class="sub" style="margin:0">${esc(m.reason || "")}</span></div>${pill}</div>
         ${m.notes ? `<p class="meet-notes"><b>${MEET.with}’s notes:</b> ${esc(m.notes)}</p>` : ""}</div>`; }).join("")}</div></section>`;
 }
+/* ---------- Musicians page (Nov 6) ----------
+   Who can open it: Active team members tagged with a musician position, plus Cassie (MEET.emails).
+   Leads (Patrick Shorts and Cassie) can mark anyone Tardy / Leaving Early for a date and add a guest musician.
+   Tardy / early marks are kept in Site Assets/app/musician-flags.json, keyed "<date>|<full name lower-case>". */
+const MUSIC_LEAD_NAMES = ["patrick shorts"];
+const ICON_MUSIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
+const musicChoices = () => (S.servingGroups || []).find(g => g.col === "MusicianPositions")?.choices || [];
+const isMusicianProfile = p => !!p && isProfile(p) && !p.gone && (p.positions || []).some(x => musicChoices().includes(x));
+const isMusicLead = () => DEMO || isMeetHost() || MUSIC_LEAD_NAMES.includes(lc(myProfile()?.fullName || ""));
+function canSeeMusic(){
+  if (DEMO || isMeetHost()) return true;
+  const me = myProfile();
+  return !!me && lc(me.active) === "active" && isMusicianProfile(me);
+}
+let MFLAGS = null, mflagsLoading = false;
+function musFlags(){
+  if (!MFLAGS && !mflagsLoading){ mflagsLoading = true;
+    (async () => { let v = {}; if (!DEMO){ try { const id = await docLinksDrive(); v = await API.g(`/drives/${id}/root:/app/musician-flags.json:/content`); } catch(e){ if (e.status !== 404) console.warn("Musician flags:", e); } }
+      MFLAGS = (v && typeof v === "object" && !Array.isArray(v)) ? v : {}; mflagsLoading = false; render(); })(); }
+  return MFLAGS || {};
+}
+async function saveMusFlag(key, kind, text){
+  if (DEMO){ MFLAGS ||= {}; const cur = { ...(MFLAGS[key] || {}) }; if (text) cur[kind] = text; else delete cur[kind]; if (cur.tardy || cur.early) MFLAGS[key] = cur; else delete MFLAGS[key]; return; }
+  const id = await docLinksDrive();
+  let all = {}; try { all = await API.g(`/drives/${id}/root:/app/musician-flags.json:/content`); } catch(e){ if (e.status !== 404) throw e; }
+  if (!all || typeof all !== "object" || Array.isArray(all)) all = {};
+  const cur = { ...(all[key] || {}) };
+  if (text){ cur[kind] = text; cur.by = S.me?.name || ""; cur.at = new Date().toISOString(); } else delete cur[kind];
+  if (cur.tardy || cur.early) all[key] = cur; else delete all[key];
+  const cut = addDays(todayKey(), -60); Object.keys(all).forEach(k => { if (k.slice(0, 10) < cut) delete all[k]; });   // keep the file small
+  await API.g(`/drives/${id}/root:/app/musician-flags.json:/content`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(all) });
+  MFLAGS = all;
+}
+const musKey = (k, name) => `${k}|${lc(name || "")}`;
+function musFlagLine(k, name){
+  const f = musFlags()[musKey(k, name)]; if (!f) return "";
+  return `<div class="mus-flags">${f.tardy ? `<span class="pill warn">TARDY</span><span>${esc(f.tardy)}</span>` : ""}${f.early ? `<span class="pill warn">LEAVING EARLY</span><span>${esc(f.early)}</span>` : ""}</div>`;
+}
+function musFlagControls(k, name){
+  if (!isMusicLead()) return "";
+  const key = musKey(k, name), f = musFlags()[key] || {};
+  if (S.musFlag && S.musFlag.key === key){
+    const kind = S.musFlag.kind, label = kind === "tardy" ? "Tardy" : "Leaving Early";
+    return `<form class="mus-flag-form" id="musFlagForm" data-key="${esc(key)}" data-kind="${kind}">
+        <label for="mf-text">${label}${kind === "tardy" ? " (how late?)" : " (what time?)"}</label>
+        <input id="mf-text" maxlength="80" value="${esc(f[kind] || "")}" placeholder="${kind === "tardy" ? "e.g. 15 minutes late" : "e.g. leaving at 11:30"}">
+        <div class="actions"><button class="btn blue" type="submit" id="mf-save">Save</button>${f[kind] ? `<button class="btn decline-soft" type="button" data-act="mus-flag-clear">Clear</button>` : ""}<button class="btn" type="button" data-act="mus-flag-close">Cancel</button></div></form>`;
+  }
+  return `<div class="mus-btns"><button type="button" class="btn mus-mark ${f.tardy ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="tardy">⏰ Tardy</button><button type="button" class="btn mus-mark ${f.early ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="early">🚪 Leave Early</button></div>`;
+}
+function musGuestForm(k, cats){
+  const choices = serviceChoices(), wd = fromKey(k).toLocaleDateString("en-US", { weekday: "long" });
+  const cat = cats[0] || choices.find(c => c.startsWith(wd)) || choices[0] || "";
+  return `<form class="panel stack mus-guest" id="musGuestForm" data-date="${k}">
+      <h2 class="section-label" style="margin:0">Add a Guest Musician · ${esc(fmtShort(k))}</h2>
+      <div class="field"><label for="mg-name">Name</label><input id="mg-name" maxlength="200" required placeholder="Their name"></div>
+      <div class="field"><label for="mg-pos">Instrument</label><select id="mg-pos" required><option value="">— Choose an instrument —</option>${musicChoices().map(c => `<option>${esc(c)}</option>`).join("")}</select></div>
+      ${cats.length ? `<input type="hidden" id="mg-cat" value="${esc(cats[0])}">` : `<div class="field"><label for="mg-cat">Service</label><select id="mg-cat">${choices.map(c => `<option ${c === cat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>`}
+      <div class="actions"><button class="btn blue" type="submit" id="mg-save">Add Guest</button><button class="btn" type="button" data-act="mus-guest-close">Cancel</button></div></form>`;
+}
+function viewMusicians(){
+  if (!canSeeMusic()) return `${backBar("Musicians")}<div class="empty">This page is for the musicians team.</div>`;
+  musFlags();
+  const t = todayKey(), mc = musicChoices();
+  const isMusRow = i => !isProfile(i) && !isAbsent(i) && i.date && !!i.fullName && (i.positions || []).some(x => mc.includes(x));   // people only (no unfilled slots)
+  const isMusAbs = i => isAbsent(i) && i.date && isMusicianProfile(rosterOf(i));
+  const dates = [...new Set(S.items.filter(i => i.date >= t && (isMusRow(i) || isMusAbs(i))).map(i => i.date))].sort().slice(0, 12);
+  if (!S.musDate) S.musDate = dates[0] || t;
+  if (!dates.includes(S.musDate)) dates.push(S.musDate), dates.sort();
+  const k = S.musDate;
+  const rows = S.items.filter(i => i.date === k && isMusRow(i)).sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
+  const abs = S.items.filter(i => i.date === k && isMusAbs(i));
+  const cats = [...new Set(S.items.filter(i => !isProfile(i) && i.date === k && !isAbsent(i) && i.category).map(i => i.category))];
+  const chips = dates.map(d => { const x = fromKey(d); return `<button class="date-chip ${d === k ? "on" : ""}" data-act="mus-date" data-date="${d}" aria-pressed="${d === k}"><span>${x.toLocaleDateString(undefined,{weekday:"short"})}</span><b>${x.getDate()}</b><span>${x.toLocaleDateString(undefined,{month:"short"})}</span></button>`; }).join("");
+  const pill = i => approved(i) ? `<span class="pill ok">CONFIRMED</span>` : `<span class="pill pending-pill">PENDING</span>`;
+  const card = (i, inst, extra) => `<div class="panel mus-card">
+      <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><b>${esc(i.fullName || "Not assigned")}</b><span class="mus-inst">${esc(inst)}</span></div>${extra}</div>
+      ${musFlagLine(k, i.fullName)}${musFlagControls(k, i.fullName)}</div>`;
+  const guest = i => !rosterOf(i);
+  return `${backBar("Musicians")}
+    <div class="date-chips" role="group" aria-label="Service dates">${chips}</div>
+    <div class="mus-pick-row"><label for="mus-pick">Other date</label><input type="date" id="mus-pick" class="mus-pick" value="${k}"></div>
+    <div class="day-h"><h2 class="section-label">${esc(fmtLong(k))}${cats.length ? ` · ${esc(cats.join(", "))}` : ""}</h2></div>
+    ${isMusicLead() ? (S.musGuest === k ? musGuestForm(k, cats) : `<button class="btn tpl-btn" data-act="mus-guest-open">＋ Add Guest Musician</button>`) : ""}
+    <section><h2 class="section-label">Musicians <span class="count">${rows.length}</span></h2>
+      ${rows.length ? `<div class="list">${rows.map(i => card(i, (i.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side">${guest(i) ? `<span class="pill">GUEST</span>` : ""}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No musicians scheduled for this date yet.</div>`}</section>
+    <section><h2 class="section-label">Absent <span class="count ${abs.length ? "hot" : ""}">${abs.length}</span></h2>
+      ${abs.length ? `<div class="list">${abs.map(i => card(i, (rosterOf(i)?.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side"><span class="pill bad">ABSENT</span></div>`)).join("")}</div>` : `<div class="empty">No musicians are absent this day.</div>`}</section>`;
+}
 function viewHome(){
   const t = todayKey(), wk = addDays(t, 7);
   const todayShown = assignments().some(i => mine(i) && i.date === t && (approved(i) || pending(i)));   // the "You're Serving Today" card
@@ -1743,7 +1851,7 @@ function viewHome(){
   const myWall = myProfile() ? wallMessages(myProfile()) : [];
   return `
     <div class="home-top"><div><h1 class="greet">Welcome ${esc(first)}</h1><p class="sub">${esc(fmtLong(t))}</p></div>
-      <button class="iconbtn notes-btn home-docs" data-act="tab" data-view="docs" aria-label="Team Documents" title="Team Documents">${ICON.docs}</button></div>
+      <div class="home-icons">${canSeeMusic() ? `<button class="iconbtn notes-btn home-docs" data-act="tab" data-view="musicians" aria-label="Musicians" title="Musicians">${ICON_MUSIC}</button>` : ""}<button class="iconbtn notes-btn home-docs" data-act="tab" data-view="docs" aria-label="Team Documents" title="Team Documents">${ICON.docs}</button></div></div>
     ${todayHero()}
     ${meetHostPanel()}
     ${meetMinePanel()}
@@ -2623,7 +2731,7 @@ function render(){
     app.innerHTML = header + `<main><div class="wrap">${body}${ServeProfile.link()}</div></main>`;
     return;
   }
-  const views = { messages: () => Comm.view(), admin: viewAdmin, directory: viewDirectory, home: viewHome, schedule: viewSchedule, calendar: viewCalendar, notes: viewNotes, team: viewTeam, member: viewMember, absence: viewAbsence, docs: viewDocs, doc: viewDoc, profile: viewProfile, install: viewInstall };
+  const views = { messages: () => Comm.view(), admin: viewAdmin, directory: viewDirectory, home: viewHome, schedule: viewSchedule, calendar: viewCalendar, notes: viewNotes, team: viewTeam, member: viewMember, absence: viewAbsence, docs: viewDocs, doc: viewDoc, musicians: viewMusicians, profile: viewProfile, install: viewInstall };
   if (!views[S.view]){ S.view = "home"; S.arg = null; }
   saveNav();
   const active = ["notes","team","member","admin","doc"].includes(S.view) ? (S.stack[0]?.view || "home") : S.view;
@@ -3005,6 +3113,16 @@ document.addEventListener("click", async e => {
       } catch(err){ toast("Couldn't save your answer. " + err.message, true); }
       S.busy.delete("mt-" + m.id); render(); break;
     }
+    case "mus-date": S.musDate = b.dataset.date; S.musFlag = null; S.musGuest = null; render(); break;
+    case "mus-flag": S.musFlag = { key: b.dataset.key, kind: b.dataset.kind }; render(); $("#mf-text")?.focus(); break;
+    case "mus-flag-close": S.musFlag = null; render(); break;
+    case "mus-flag-clear": {
+      if (!isMusicLead() || !S.musFlag) break; b.disabled = true;
+      try { await saveMusFlag(S.musFlag.key, S.musFlag.kind, ""); S.musFlag = null; toast("Cleared"); } catch(err){ toast("Couldn't save that. " + err.message, true); }
+      render(); break;
+    }
+    case "mus-guest-open": S.musGuest = S.musDate; render(); $("#mg-name")?.focus(); break;
+    case "mus-guest-close": S.musGuest = null; render(); break;
     case "share-app": shareApp(); break;
     case "install-hide": S.installHidden = true; render(); break;
     case "ask-decline": S.confirm = item.id; render(); break;
@@ -3156,6 +3274,30 @@ document.addEventListener("submit", async e => {
       m.active = act;
       toast(`Saved: ${m.fullName}`); render();
     } catch(err){ toast("Couldn't save. " + err.message, true); btn.disabled = false; btn.textContent = "Save Roles & Status"; }
+    return;
+  }
+  if (e.target.id === "musFlagForm"){
+    if (!isMusicLead()) return;
+    const key = e.target.dataset.key, kind = e.target.dataset.kind, text = $("#mf-text").value.trim();
+    const btn = $("#mf-save"); btn.disabled = true; btn.textContent = "Saving…";
+    try { await saveMusFlag(key, kind, text); S.musFlag = null; toast(text ? "Saved" : "Cleared"); render(); }
+    catch(err){ toast("Couldn't save that. " + err.message, true); btn.disabled = false; btn.textContent = "Save"; }
+    return;
+  }
+  if (e.target.id === "musGuestForm"){
+    if (!isMusicLead()) return;
+    const k = e.target.dataset.date, name = $("#mg-name").value.trim().replace(/\s+/g, " "), pos = $("#mg-pos").value, cat = $("#mg-cat")?.value || "";
+    if (!name || !pos){ toast("Add their name and instrument.", true); return; }
+    const btn = $("#mg-save"); btn.disabled = true; btn.textContent = "Adding…";
+    const who = personForName(name);
+    const f = { ServiceDate: toSp(k), ServiceCategory: cat || null, FullName: name, "MusicianPositions@odata.type": "Collection(Edm.String)", MusicianPositions: [pos], Status: "Accepted", Published: "Request Approved" };
+    if (who) f.NameEmailLookupId = String(who.id);
+    try {
+      const id = await API.addItem(f);
+      const it = normalize(id, {}); Object.assign(it, { date: k, category: cat, fullName: name, first: firstOf(name), personId: who ? String(who.id) : "", email: who?.profile?.email || "",
+        positions: [pos], role: pos, status: "Accepted", published: "Request Approved" });
+      S.items.push(it); S.musGuest = null; toast(`Added ${name} on ${pos}`); render();
+    } catch(err){ toast("Couldn't add them. " + err.message, true); btn.disabled = false; btn.textContent = "Add Guest"; }
     return;
   }
   if (e.target.id === "meetForm"){
@@ -3329,6 +3471,7 @@ function annDraftSave(){
   if (u) S.annDraft.until = u.value;
 }
 document.addEventListener("change", async e => {
+  if (e.target.id === "mus-pick"){ if (e.target.value){ S.musDate = e.target.value; S.musFlag = null; S.musGuest = null; render(); } return; }
   if (e.target.id === "abs-for"){ S.absFor = e.target.value || null; S.abs = null; S.absConfirm = null; S.absenceDone = false; render(); return; }
   if (e.target.id === "admin-pick"){ if (e.target.value){ S.adminExtra = e.target.value; S.adminDate = e.target.value; S.catEdit = null; S.noSvcAsk = null; S.pickOpen = false; render(); } return; }
   const row = e.target.closest(".admin-row");
