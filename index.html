@@ -770,7 +770,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "116";
+const APP_VERSION = "117";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -2403,34 +2403,51 @@ let ADMIN_SLOTS = [];
 /* Removed extra-role cards (e.g. "Worship Leader" for someone already confirmed as a musician) stay removed:
    kept by date + name + role in Site Assets/app/hidden-cards.json, shared by every admin. */
 const hideKey = (date, name, role) => `${date}|${lc(name || "")}|${lc(role || "")}`;
-let HIDDEN = null, hiddenLoading = false;
+let HIDDEN = null, hiddenLoading = false, hiddenWrite = Promise.resolve();
 function hiddenCards(){
   if (!HIDDEN && !hiddenLoading && isEditor()){ hiddenLoading = true;
     (async () => { let list = []; if (!DEMO){ try { const id = await docLinksDrive(); list = await API.g(`/drives/${id}/root:/app/hidden-cards.json:/content`); } catch(e){ if (e.status !== 404) console.warn("Hidden cards:", e); } }
-      HIDDEN = new Set([...(Array.isArray(list) ? list : []), ...(HIDDEN || [])]); hiddenLoading = false; render(); })(); }
+      HIDDEN ??= new Set(Array.isArray(list) ? list : []); hiddenLoading = false; render(); })(); }
   return HIDDEN || new Set();
 }
+function updateHiddenCards(keys, hide){
+  const affected = keys.filter(Boolean);
+  if (!affected.length) return Promise.resolve();
+  const save = hiddenWrite.then(async () => {
+    const path = DEMO ? "" : `/drives/${await docLinksDrive()}/root:/app/hidden-cards.json:/content`;
+    let saved = [...(HIDDEN || [])];
+    if (path) {
+      try { saved = await API.g(path); }
+      catch (e) { if (e.status !== 404) throw e; saved = []; }
+    }
+    const current = new Set(Array.isArray(saved) ? saved : []);
+    affected.forEach(key => hide ? current.add(key) : current.delete(key));
+    const cutoff = addDays(todayKey(), -120);
+    const recent = [...current].filter(key => key.slice(0, 10) >= cutoff);
+    if (path) await API.g(path, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(recent) });
+    HIDDEN = new Set(recent);
+    render();
+  });
+  hiddenWrite = save.catch(() => {});
+  return save;
+}
 async function hideCards(keys){
-  const add = keys.filter(Boolean); if (!add.length) return;
-  HIDDEN = new Set([...(HIDDEN || []), ...add]); render();
-  if (DEMO) return;
-  try {
-    const id = await docLinksDrive(), t = todayKey();
-    let cur = []; try { cur = await API.g(`/drives/${id}/root:/app/hidden-cards.json:/content`); } catch(e){ if (e.status !== 404) throw e; }
-    const all = [...new Set([...(Array.isArray(cur) ? cur : []), ...HIDDEN])].filter(k => k.slice(0, 10) >= addDays(t, -120));   // keep removals for past dates too (drop after ~4 months)
-    await API.g(`/drives/${id}/root:/app/hidden-cards.json:/content`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(all) });
-    HIDDEN = new Set(all);
-  } catch(e){ toast("Removed for now, but couldn't save it for next time. " + e.message, true); }
+  try { await updateHiddenCards(keys, true); return true; }
+  catch (e) { toast("Couldn't save the removal. " + e.message, true); return false; }
+}
+function pendingPositionKeys(i){
+  if (approved(i) || !i.fullName) return [];
+  return (i.positions || []).filter(role => posCol(role)).map(role =>
+    isWorshipLeader(role) ? pendingLeaderKey(i.date, i.fullName) : hideKey(i.date, i.fullName, role));
 }
 function purgePlan(h, part){
   return part.filter(i => i._new || !approved(i)).map(i => {
     if (i._rosterLeader) return { hide: pendingLeaderKey(i.date, i.fullName) };
-    if (i.positions?.every(isWorshipLeader)) return { del: i.id, hide: pendingLeaderKey(i.date, i.fullName) };
     if (i._new) return { hide: i._hk || i._key };                       // extra card for a role they don't hold: hide it
     const row = S.items.find(x => x.id === i.id);
     const blank = !(row?.positions || []).length;               // prefilled card on a row with no position yet
     const elsewhere = ADMIN_SLOTS.some(x => x.id === i.id && x._key !== i._key && sectionOf(x) !== h);
-    return blank && elsewhere ? { hide: i._hk || i._key } : { del: i.id };
+    return blank && elsewhere ? { hide: i._hk || i._key } : { del: i.id, afterDelete: row ? pendingPositionKeys(row) : [] };
   });
 }
 const purgePart = sec => { const [h, v] = sec.split(":"); return ADMIN_SLOTS.filter(i => sectionOf(i) === h && (!v || (v === "-" ? !voiceOf(i) : voiceOf(i) === v))); };
@@ -2543,6 +2560,23 @@ function addPeopleList(k, dayRows){
   const active = new Set(S.items.filter(i => isProfile(i) && activeRosterMember(i)).map(i => lc(i.fullName)));
   return (S.names || []).filter(n => n && n !== "--" && !/^choice \d+$/i.test(n) && !skip.has(lc(n)) && !have.has(lc(n)) && active.has(lc(n)));
 }
+function removedRosterOptions(date, dayRows){
+  const hidden = hiddenCards();
+  const absent = new Set(dayRows.filter(isAbsent).map(i => lc(i.fullName)));
+  const skip = new Set((CONFIG.addPeopleSkip || []).map(lc));
+  const options = new Map();
+  for (const p of S.items) {
+    const name = lc(p.fullName);
+    if (!name || !isProfile(p) || !activeRosterMember(p) || absent.has(name) || skip.has(name)) continue;
+    for (const role of p.positions || []) {
+      const leader = isWorshipLeader(role);
+      if (!posCol(role) || (leader && !activeWorshipLeader(p))) continue;
+      const key = leader ? pendingLeaderKey(date, p.fullName) : hideKey(date, p.fullName, role);
+      if (hidden.has(key)) options.set(key, name);
+    }
+  }
+  return options;
+}
 function adminAddPeople(k, dayRows){
   if (dayRows.some(isNoService)) return "";
   const todo = addPeopleList(k, dayRows);
@@ -2551,17 +2585,19 @@ function adminAddPeople(k, dayRows){
   if (S.guestAsk === k) return guestForm(k, cats);
   const guestBtn = `<button class="btn tpl-btn" data-act="guest-open" data-date="${k}">＋ Add Fill-In / Guest</button>`;
   if (S.addAsk !== k) return `<div class="tpl-btns"><button class="btn tpl-btn" data-act="add-people" data-date="${k}">＋ Add People</button>${guestBtn}</div>`;
-  if (!todo.length) return `<div class="tpl-ask"><span>No active roster members are available to add for this date.</span>
+  const restore = removedRosterOptions(k, dayRows);
+  if (!todo.length && !restore.size) return `<div class="tpl-ask"><span>No active roster members are available to add for this date.</span>
     <button class="btn" data-act="add-people-keep">Done</button></div>`;
   const wd = fromKey(k).toLocaleDateString("en-US", { weekday: "long" });
   const choices = serviceChoices();
   if (!S.addCat || !choices.includes(S.addCat)) S.addCat = cats[0] || choices.find(c => c.startsWith(wd)) || choices[0] || "";
   // Same box as Productions' "＋ Add Positions" confirm.
-  const all = !dayRows.some(i => i.fullName && !isAbsent(i));
-  const what = all ? `the ${todo.length} people` : `the ${todo.length} people not on this date yet`;
-  return `<div class="tpl-ask"><span>Add ${what} to ${esc(fmtShort(k))}${cats.length ? ` as ${esc(cats[0])}` : ""}?</span>
-      ${cats.length ? "" : `<select id="add-cat" aria-label="Service Category">${choices.map(c => `<option ${c === S.addCat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`}
-      <button class="btn yes" data-act="add-people-yes" data-date="${k}" ${S.addBusy ? "disabled" : ""}>${S.addBusy ? esc(S.addBusy) : "Yes, add them"}</button>
+  const changes = [];
+  if (todo.length) changes.push(`Add ${todo.length} ${todo.length === 1 ? "person" : "people"}`);
+  if (restore.size) changes.push(`${todo.length ? "restore" : "Restore"} ${restore.size} removed roster ${restore.size === 1 ? "option" : "options"}`);
+  return `<div class="tpl-ask"><span>${changes.join(" and ")} for ${esc(fmtShort(k))}?</span>
+      ${cats.length || !todo.length ? "" : `<select id="add-cat" aria-label="Service Category">${choices.map(c => `<option ${c === S.addCat ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`}
+      <button class="btn yes" data-act="add-people-yes" data-date="${k}" ${S.addBusy ? "disabled" : ""}>${S.addBusy ? esc(S.addBusy) : todo.length ? "Yes, add them" : "Restore options"}</button>
       <button class="btn" data-act="add-people-keep" ${S.addBusy ? "disabled" : ""}>Cancel</button></div>`;
 }
 /* "Add Fill-In / Guest": one row for someone who isn't on the Roster (a guest singer or musician).
@@ -2974,19 +3010,22 @@ document.addEventListener("click", async e => {
     case "no-service-del-yes": {
       if (!isEditor() || S.noSvcBusy || !item || !isNoService(item)) break;
       S.noSvcBusy = true; render();
-      try { await API.deleteItem(item.id);
-        if (item.positions?.length && item.positions.every(isWorshipLeader) && !approved(item)) await hideCards([pendingLeaderKey(item.date, item.fullName)]);
-        S.items = S.items.filter(i => i.id !== item.id); toast(`No Service removed from ${fmtShort(item.date)}`); }
+      try { await API.deleteItem(item.id); S.items = S.items.filter(i => i.id !== item.id); toast(`No Service removed from ${fmtShort(item.date)}`); }
       catch(err){ toast("Couldn't remove it. " + err.message, true); }
       S.noSvcBusy = false; S.noSvcDel = null; render(); break;
     }
     case "row-del": S.rowDel = b.dataset.id; render(); break;
-    case "slot-hide": hideCards([b.dataset.hk || b.dataset.key]); render(); break;
+    case "slot-hide": await hideCards([b.dataset.hk || b.dataset.key]); break;
     case "row-del-keep": S.rowDel = null; render(); break;
     case "row-del-yes": {
       if (!isEditor() || !item || isProfile(item)) break;
       S.busy.add(item.id); render();
-      try { await API.deleteItem(item.id); S.items = S.items.filter(i => i.id !== item.id); toast(`Deleted: ${item.role || "position"}${item.fullName ? `, ${item.fullName}` : ""}`); }
+      try {
+        await API.deleteItem(item.id);
+        S.items = S.items.filter(i => i.id !== item.id);
+        toast(`Deleted: ${item.role || "position"}${item.fullName ? `, ${item.fullName}` : ""}`);
+        await hideCards(pendingPositionKeys(item));
+      }
       catch(err){ toast("Couldn't delete it. " + err.message, true); }
       S.busy.delete(item.id); S.rowDel = null; render(); updateBadge(); break;
     }
@@ -2997,10 +3036,12 @@ document.addEventListener("click", async e => {
       const k = b.dataset.date, dayRows = S.items.filter(i => !isProfile(i) && i.date === k);
       if (dayRows.some(isNoService)) break;
       const names = addPeopleList(k, dayRows);
-      if (!names.length) { render(); break; }
+      const restore = removedRosterOptions(k, dayRows);
+      if (!names.length && !restore.size) { render(); break; }
+      const restoringNames = new Set(restore.values());
       const cats = [...new Set(dayRows.filter(i => !isNoService(i) && !isAbsent(i) && svcFilled(i.category)).map(i => i.category))];
       const cat = cats[0] || $("#add-cat")?.value || S.addCat;
-      if (!cat){ toast("Choose a Service Category first.", true); break; }
+      if (names.length && !cat){ toast("Choose a Service Category first.", true); break; }
       const rows = names.map(n => {
         const who = personForName(n), prof = who?.profile && isProfile(who.profile) ? who.profile : S.items.find(i => isProfile(i) && lc(i.fullName) === lc(n));
         const f = { ServiceDate: toSp(k), ServiceCategory: cat, FullName: n, Status: "Pending", Published: "--" };
@@ -3009,10 +3050,10 @@ document.addEventListener("click", async e => {
         // straight away in that role, confirmed. Absent people never reach this list.
         const musChoices = (S.servingGroups || []).find(g => g.col === "MusicianPositions")?.choices || [];
         const mus = (prof?.positions || []).filter(r => musChoices.includes(r));
-        if (prof && !prof.gone && lc(prof.active) === "active" && mus.length === 1){
+        if (!restoringNames.has(lc(n)) && prof && activeRosterMember(prof) && mus.length === 1){
           f["MusicianPositions@odata.type"] = "Collection(Edm.String)"; f.MusicianPositions = [mus[0]];
           f.Status = "Accepted"; f.Published = "Request Approved";
-        } else if (prof && !prof.gone && lc(prof.active) === "active"){
+        } else if (!restoringNames.has(lc(n)) && prof && activeRosterMember(prof)){
           const voices = (prof.positions || []).filter(r => VOICES.includes(r));
           if (voices.length === 1){
             f["SingingPositions@odata.type"] = "Collection(Edm.String)"; f.SingingPositions = [voices[0]];
@@ -3020,10 +3061,11 @@ document.addEventListener("click", async e => {
         }
         return { f, who, prof };
       });
-      S.addBusy = `Adding ${rows.length}…`; render();
+      S.addBusy = "Saving…"; render();
+      let ok = 0;
       try {
-        const ids = await API.addItems(rows.map(r => r.f));
-        let ok = 0;
+        const ids = rows.length ? await API.addItems(rows.map(r => r.f)) : [];
+        const failedNames = new Set(names.filter((_, n) => !ids[n]).map(lc));
         ids.forEach((id, n) => {
           if (!id) return; ok++;
           const r = rows[n], f = r.f;
@@ -3031,9 +3073,14 @@ document.addEventListener("click", async e => {
           Object.assign(it, { date: k, category: cat, fullName: f.FullName, personId: r.who?.id || "", email: r.who?.profile?.email || r.prof?.email || "" });
           S.items.push(it);
         });
-        toast(ok === rows.length ? `Added ${ok} people to ${fmtShort(k)}` : `Added ${ok} of ${rows.length}; try Add People again for the rest.`, ok !== rows.length);
+        const restored = [...restore].filter(([, name]) => !failedNames.has(name)).map(([key]) => key);
+        await updateHiddenCards(restored, false);
+        const result = [];
+        if (rows.length) result.push(`Added ${ok} of ${rows.length}`);
+        if (restored.length) result.push(`Restored ${restored.length} roster ${restored.length === 1 ? "option" : "options"}`);
+        toast(result.join(". ") + (ok !== rows.length ? ". Try Add People again for the rest." : "."), ok !== rows.length);
         S.addAsk = null;
-      } catch(err){ toast("Couldn't add people. " + err.message, true); }
+      } catch(err){ toast((ok ? `Added ${ok}. ` : "") + "Couldn't complete Add People. " + err.message, true); }
       S.addBusy = ""; render(); break;
     }
     case "no-service-keep": S.noSvcAsk = null; render(); break;
@@ -3100,11 +3147,13 @@ document.addEventListener("click", async e => {
       const sec = b.dataset.sec, h = sec.split(":")[0], part = purgePart(sec), plan = purgePlan(h, part);
       const dels = [...new Set(plan.filter(x => x.del).map(x => x.del))], hides = plan.filter(x => x.hide).map(x => x.hide);
       S.purgeBusy = true; render(); let ok = 0, bad = 0;
-      hideCards(hides);
+      const deleted = new Set();
       for (let n = 0; n < dels.length; n += 6)
-        await Promise.all(dels.slice(n, n + 6).map(async id => { try { await API.deleteItem(id); S.items = S.items.filter(i => i.id !== id); ok++; } catch(e){ bad++; } }));
+        await Promise.all(dels.slice(n, n + 6).map(async id => { try { await API.deleteItem(id); S.items = S.items.filter(i => i.id !== id); ok++; deleted.add(id); } catch(e){ bad++; } }));
+      const deletedKeys = plan.filter(x => deleted.has(x.del)).flatMap(x => x.afterDelete || []);
+      const savedHides = await hideCards([...hides, ...deletedKeys]);
       S.purgeBusy = false; S.purgeAsk = null;
-      toast(bad ? `Removed ${ok + hides.length}; ${bad} couldn't be deleted. Try again.` : `Removed ${ok + hides.length} not confirmed from ${h}`, !!bad);
+      if (savedHides) toast(bad ? `Removed ${ok + hides.length}; ${bad} couldn't be deleted. Try again.` : `Removed ${ok + hides.length} not confirmed from ${h}`, !!bad);
       render(); updateBadge(); break;
     }
     case "dl-open": S.dlAdd = true; render(); $("#dl-title")?.focus(); break;
