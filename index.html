@@ -770,7 +770,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "115";
+const APP_VERSION = "116";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -2548,11 +2548,11 @@ function adminAddPeople(k, dayRows){
   const todo = addPeopleList(k, dayRows);
   const svc = dayRows.filter(i => !isNoService(i) && !isAbsent(i) && svcFilled(i.category));
   const cats = [...new Set(svc.map(i => i.category))];
-  const absent = dayRows.filter(isAbsent).length;
   if (S.guestAsk === k) return guestForm(k, cats);
   const guestBtn = `<button class="btn tpl-btn" data-act="guest-open" data-date="${k}">＋ Add Fill-In / Guest</button>`;
-  if (!todo.length) return `<div class="tpl-btns">${guestBtn}</div>`;
   if (S.addAsk !== k) return `<div class="tpl-btns"><button class="btn tpl-btn" data-act="add-people" data-date="${k}">＋ Add People</button>${guestBtn}</div>`;
+  if (!todo.length) return `<div class="tpl-ask"><span>No active roster members are available to add for this date.</span>
+    <button class="btn" data-act="add-people-keep">Done</button></div>`;
   const wd = fromKey(k).toLocaleDateString("en-US", { weekday: "long" });
   const choices = serviceChoices();
   if (!S.addCat || !choices.includes(S.addCat)) S.addCat = cats[0] || choices.find(c => c.startsWith(wd)) || choices[0] || "";
@@ -2995,8 +2995,9 @@ document.addEventListener("click", async e => {
     case "add-people-yes": {
       if (!isEditor() || S.addBusy) break;
       const k = b.dataset.date, dayRows = S.items.filter(i => !isProfile(i) && i.date === k);
-      const absentNames = new Set(dayRows.filter(isAbsent).map(i => lc(i.fullName)));
-      const names = addPeopleList(k, dayRows).filter(n => !absentNames.has(lc(n)));
+      if (dayRows.some(isNoService)) break;
+      const names = addPeopleList(k, dayRows);
+      if (!names.length) { render(); break; }
       const cats = [...new Set(dayRows.filter(i => !isNoService(i) && !isAbsent(i) && svcFilled(i.category)).map(i => i.category))];
       const cat = cats[0] || $("#add-cat")?.value || S.addCat;
       if (!cat){ toast("Choose a Service Category first.", true); break; }
