@@ -770,7 +770,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "114";
+const APP_VERSION = "115";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1976,9 +1976,6 @@ function viewCalendar(){
   const ev = eventsOn(sel);
   const dayCats = [...new Set(ev.a.map(i => (i.category || "").trim()).filter(Boolean))].join(" · ");
   const team = calSections(ev.a);
-  const leaders = isEditor() && !ev.none ? pendingWorshipLeaders(sel) : [];
-  const leaderSection = leaders.length ? secBlock("cal:pending-worship-leaders", "Worship Leaders to Confirm",
-    leaders.length, rosterBlock(leaders, () => "Pending")) : "";
   const bdayRows = ev.b.map(p => {
     const canChat = wallOpen(p) && myProfile()?.id !== p.id;
     return canChat
@@ -2001,8 +1998,7 @@ function viewCalendar(){
       ${meetForm(sel)}
       ${ev.none ? `<div class="no-service"><span aria-hidden="true">❌</span> No Service</div>` : ""}
       ${bdayRows ? `<div class="list" style="margin-bottom:10px">${bdayRows}</div>` : ""}
-      ${team ? servingHead() + team : (bdayRows || ev.none || leaderSection ? "" : `<div class="empty">No events scheduled.</div>`)}
-      ${leaderSection}
+      ${team ? servingHead() + team : (bdayRows || ev.none ? "" : `<div class="empty">No events scheduled.</div>`)}
     </section>`;
 }
 
@@ -2325,6 +2321,7 @@ function posGroups(i){
   if (tm.length) out.push({ col: mus.col, label: "Musicians", choices: tm });
   return out;
 }
+const pendingLeaderKey = (date, name) => hideKey(date, name, WORSHIP_LEADER) + "|pending-leader";
 const activeRosterMember = p => !p.gone && lc(p.active).trim() === "active";
 const activeWorshipLeader = p => !!p?.singingLeader && activeRosterMember(p);
 function servingTeamRows(rows){
@@ -2343,23 +2340,12 @@ function addWorshipLeaderCards(slots, date, dayRows){
   const category = dayRows.find(i => !isAbsent(i) && !isNotesHolder(i) && svcFilled(i.category))?.category
     || choices.find(c => c.startsWith(weekday)) || choices[0] || "";
   for (const p of S.items.filter(i => isProfile(i) && activeWorshipLeader(i))) {
-    const name = lc(p.fullName).trim(), key = hideKey(date, p.fullName, WORSHIP_LEADER);
-    if (!name || used.has(name) || absent.has(name)) continue;
+    const name = lc(p.fullName).trim(), key = pendingLeaderKey(date, p.fullName);
+    if (!name || used.has(name) || absent.has(name) || hiddenCards().has(key)) continue;
     used.add(name);
     slots.push({ ...p, date, category, positions: [WORSHIP_LEADER], role: WORSHIP_LEADER,
       status: "Pending", published: "--", _key: p.id + "|" + WORSHIP_LEADER, _hk: key, _pos: WORSHIP_LEADER, _new: true, _rosterLeader: true });
   }
-}
-function pendingWorshipLeaders(date){
-  const dayRows = S.items.filter(i => !isProfile(i) && i.date === date);
-  const slots = dayRows.filter(i => !isAbsent(i) && i.positions?.some(isWorshipLeader) && activeWorshipLeader(rosterOf(i)));
-  addWorshipLeaderCards(slots, date, dayRows);
-  const people = new Map();
-  for (const i of slots) {
-    const name = lc(i.fullName).trim(), previous = people.get(name);
-    if (!previous || approved(i)) people.set(name, i);
-  }
-  return [...people.values()].filter(i => i.status === "Pending" && !approved(i)).sort(nameCmp);
 }
 /* Which header a person goes under: by the position on the row (singing → Singers, musician → Musicians);
    with no such position yet, by their Roster roles (singing roles first). Untagged people go under "Not Tagged". */
@@ -2437,7 +2423,9 @@ async function hideCards(keys){
   } catch(e){ toast("Removed for now, but couldn't save it for next time. " + e.message, true); }
 }
 function purgePlan(h, part){
-  return part.filter(i => (i._new || !approved(i)) && !i._rosterLeader).map(i => {
+  return part.filter(i => i._new || !approved(i)).map(i => {
+    if (i._rosterLeader) return { hide: pendingLeaderKey(i.date, i.fullName) };
+    if (i.positions?.every(isWorshipLeader)) return { del: i.id, hide: pendingLeaderKey(i.date, i.fullName) };
     if (i._new) return { hide: i._hk || i._key };                       // extra card for a role they don't hold: hide it
     const row = S.items.find(x => x.id === i.id);
     const blank = !(row?.positions || []).length;               // prefilled card on a row with no position yet
@@ -2651,8 +2639,10 @@ function viewAdmin(){
     if (!tags.length){ if (blank) slots.push({ ...blank, _key: blank.id, _pos: "" }); return; }
     tags.forEach(r => {
       const key = base.id + "|" + r;
-      if (!isWorshipLeader(r) && (hiddenCards().has(hideKey(base.date, base.fullName, r)) || replacedPos().has(replacedKey(base.date, base.fullName, r)))) return;
-      slots.push({ ...base, positions: [r], role: r, status: blank ? blank.status : "", published: blank ? blank.published : "", _key: key, _hk: hideKey(base.date, base.fullName, r), _pos: r, _new: !blank, _rosterLeader: isWorshipLeader(r) });
+      const leader = isWorshipLeader(r);
+      const hiddenKey = leader ? pendingLeaderKey(base.date, base.fullName) : hideKey(base.date, base.fullName, r);
+      if (hiddenCards().has(hiddenKey) || (!leader && replacedPos().has(replacedKey(base.date, base.fullName, r)))) return;
+      slots.push({ ...base, positions: [r], role: r, status: leader ? "Pending" : blank ? blank.status : "", published: leader ? "--" : blank ? blank.published : "", _key: key, _hk: hiddenKey, _pos: r, _new: !blank, _rosterLeader: isWorshipLeader(r) });
     });
   });
   addWorshipLeaderCards(slots, k, dayRows);
@@ -2673,7 +2663,7 @@ function viewAdmin(){
     const save = pre && !done && !locked
       ? `<button class="iconbtn notes-btn save-btn" type="submit" aria-label="Confirm ${esc(i.fullName || "")} as ${esc(pre)}" title="Confirm">${ICON.check}</button>`
       : saveIcon();
-    const trash = i._rosterLeader ? "" : i._new
+    const trash = i._rosterLeader || i._new
       ? `<button class="iconbtn trash-btn" type="button" data-act="slot-hide" data-key="${key}" data-hk="${esc(i._hk || "")}" aria-label="Hide this card" title="Remove">${ICON.trash}</button>`
       : `<button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${key}" aria-label="Delete this position" title="Delete">${ICON.trash}</button>`;
     const shown = pre || i.role || "";
@@ -2984,7 +2974,9 @@ document.addEventListener("click", async e => {
     case "no-service-del-yes": {
       if (!isEditor() || S.noSvcBusy || !item || !isNoService(item)) break;
       S.noSvcBusy = true; render();
-      try { await API.deleteItem(item.id); S.items = S.items.filter(i => i.id !== item.id); toast(`No Service removed from ${fmtShort(item.date)}`); }
+      try { await API.deleteItem(item.id);
+        if (item.positions?.length && item.positions.every(isWorshipLeader) && !approved(item)) await hideCards([pendingLeaderKey(item.date, item.fullName)]);
+        S.items = S.items.filter(i => i.id !== item.id); toast(`No Service removed from ${fmtShort(item.date)}`); }
       catch(err){ toast("Couldn't remove it. " + err.message, true); }
       S.noSvcBusy = false; S.noSvcDel = null; render(); break;
     }
