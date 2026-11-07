@@ -752,7 +752,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "104";
+const APP_VERSION = "105";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1754,10 +1754,11 @@ const MUSIC_LEAD_NAMES = ["patrick shorts"];
 const ICON_MUSIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>';
 const musicChoices = () => (S.servingGroups || []).find(g => g.col === "MusicianPositions")?.choices || [];
 const isMusicianProfile = p => !!p && isProfile(p) && !p.gone && (p.positions || []).some(x => musicChoices().includes(x));
-const isMusicLead = () => DEMO || isMeetHost() || MUSIC_LEAD_NAMES.includes(lc(myProfile()?.fullName || ""));
+const isAshley = () => !!S.me && S.me.emails.some(e => lc(e) === "ashley.stmacary@therampchurch.com");
+const isMusicLead = () => DEMO || isMeetHost() || isAshley() || MUSIC_LEAD_NAMES.includes(lc(myProfile()?.fullName || ""));
 function canSeeMusic(){
   if (DEMO || isMeetHost()) return true;
-  if (S.me && S.me.emails.some(e => lc(e) === "ashley.stmacary@therampchurch.com")) return true;   // Ashley can always see it
+  if (isAshley()) return true;
   const me = myProfile();
   return !!me && lc(me.active) === "active" && isMusicianProfile(me);
 }
@@ -1797,6 +1798,21 @@ function musFlagControls(k, name){
   }
   return `<div class="mus-btns"><button type="button" class="btn mus-mark ${f.tardy ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="tardy">⏰ Tardy</button><button type="button" class="btn mus-mark ${f.early ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="early">🚪 Leave Early</button></div>`;
 }
+/* Submit an absence for the selected date: musicians for themselves; leads for any tagged musician. */
+function musAbsForm(k){
+  const me = myProfile(), lead = isMusicLead();
+  const people = S.items.filter(p => isProfile(p) && isMusicianProfile(p) && lc(p.active) !== "non active").sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
+  const taken = new Set(S.items.filter(i => isAbsent(i) && i.date === k).map(i => lc(i.fullName || "")));
+  const opts = people.filter(p => !taken.has(lc(p.fullName || "")));
+  const who = lead ? `<div class="field"><label for="ma-who">Musician</label><select id="ma-who" required><option value="">— Choose a musician —</option>${opts.map(p => `<option value="${esc(p.id)}" ${me && p.id === me.id ? "selected" : ""}>${esc(p.fullName)}</option>`).join("")}</select></div>`
+    : me ? `<input type="hidden" id="ma-who" value="${esc(me.id)}"><p class="sub" style="margin:0">For <b>${esc(me.fullName)}</b></p>` : `<p class="sub">Your sign-in isn't linked to the Roster yet.</p>`;
+  return `<form class="panel stack" id="musAbsForm" data-date="${k}">
+      <h2 class="section-label" style="margin:0">Submit an Absence · ${esc(fmtShort(k))}</h2>
+      ${who}
+      <div class="field"><label for="ma-notes">Notes</label><textarea id="ma-notes" placeholder="Optional"></textarea></div>
+      <div class="actions"><button class="btn blue" type="submit" id="ma-save">Submit Absence</button><button class="btn" type="button" data-act="mus-abs-close">Cancel</button></div>
+      <p class="hint" style="margin:0">For several dates at once, use the <button type="button" class="linkbtn" data-act="tab" data-view="absence" style="margin:0">Absence page</button>.</p></form>`;
+}
 function musGuestForm(k, cats){
   const choices = serviceChoices(), wd = fromKey(k).toLocaleDateString("en-US", { weekday: "long" });
   const cat = cats[0] || choices.find(c => c.startsWith(wd)) || choices[0] || "";
@@ -1813,13 +1829,16 @@ function viewMusicians(){
   const t = todayKey(), mc = musicChoices();
   const isMusRow = i => !isProfile(i) && !isAbsent(i) && i.date && !!i.fullName && (i.positions || []).some(x => mc.includes(x));   // people only (no unfilled slots)
   const isMusAbs = i => isAbsent(i) && i.date && isMusicianProfile(rosterOf(i));
-  const dates = [...new Set(S.items.filter(i => i.date >= t && (isMusRow(i) || isMusAbs(i))).map(i => i.date))].sort().slice(0, 12);
+  const calDay = i => !isProfile(i) && i.date && ((!isAbsent(i) && approved(i)) || isNoService(i));   // what the Calendar shows
+  const dates = [...new Set(S.items.filter(i => i.date >= t && (calDay(i) || isMusRow(i) || isMusAbs(i))).map(i => i.date))].sort().slice(0, 20);
+  if (S.musExtra && !dates.includes(S.musExtra)) dates.push(S.musExtra), dates.sort();
   if (!S.musDate) S.musDate = dates[0] || t;
   if (!dates.includes(S.musDate)) dates.push(S.musDate), dates.sort();
   const k = S.musDate;
   const rows = S.items.filter(i => i.date === k && isMusRow(i)).sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
   const abs = S.items.filter(i => i.date === k && isMusAbs(i));
-  const cats = [...new Set(S.items.filter(i => !isProfile(i) && i.date === k && !isAbsent(i) && i.category).map(i => i.category))];
+  const cats = [...new Set(S.items.filter(i => !isProfile(i) && i.date === k && !isAbsent(i) && !isNoService(i) && i.category).map(i => i.category))];
+  const noSvc = S.items.some(i => i.date === k && isNoService(i));
   const chips = dates.map(d => { const x = fromKey(d); return `<button class="date-chip ${d === k ? "on" : ""}" data-act="mus-date" data-date="${d}" aria-pressed="${d === k}"><span>${x.toLocaleDateString(undefined,{weekday:"short"})}</span><b>${x.getDate()}</b><span>${x.toLocaleDateString(undefined,{month:"short"})}</span></button>`; }).join("");
   const pill = i => approved(i) ? `<span class="pill ok">CONFIRMED</span>` : `<span class="pill pending-pill">PENDING</span>`;
   const card = (i, inst, extra) => `<div class="panel mus-card">
@@ -1827,9 +1846,11 @@ function viewMusicians(){
       ${musFlagLine(k, i.fullName)}${musFlagControls(k, i.fullName)}</div>`;
   const guest = i => !rosterOf(i);
   return `${backBar("Musicians")}
-    <div class="date-chips" role="group" aria-label="Service dates">${chips}</div>
-    <div class="mus-pick-row"><label for="mus-pick">Other date</label><input type="date" id="mus-pick" class="mus-pick" value="${k}"></div>
+    <div class="date-chips" role="group" aria-label="Service dates">${chips}<button class="date-chip pick ${S.musPickOpen ? "on" : ""}" type="button" data-act="mus-pick-open" aria-expanded="${!!S.musPickOpen}" title="Pick another date"><span>Other</span><b>+</b><span>Date</span></button></div>
+    ${S.musPickOpen ? `<div class="field pick-field"><label for="mus-pick">Pick a date</label><input type="date" id="mus-pick" value="${esc(k)}"></div>` : ""}
     <div class="day-h"><h2 class="section-label">${esc(fmtLong(k))}${cats.length ? ` · ${esc(cats.join(", "))}` : ""}</h2></div>
+    ${noSvc ? `<div class="no-service"><span aria-hidden="true">❌</span> No Service</div>` : ""}
+    ${k >= t ? (S.musAbs === k ? musAbsForm(k) : `<button class="btn tpl-btn" data-act="mus-abs-open">＋ Submit Absence</button>`) : ""}
     ${isMusicLead() ? (S.musGuest === k ? musGuestForm(k, cats) : `<button class="btn tpl-btn" data-act="mus-guest-open">＋ Add Guest Musician</button>`) : ""}
     <section><h2 class="section-label">Musicians <span class="count">${rows.length}</span></h2>
       ${rows.length ? `<div class="list">${rows.map(i => card(i, (i.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side">${guest(i) ? `<span class="pill">GUEST</span>` : ""}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No musicians scheduled for this date yet.</div>`}</section>
@@ -3122,6 +3143,9 @@ document.addEventListener("click", async e => {
     }
     case "mus-guest-open": S.musGuest = S.musDate; render(); $("#mg-name")?.focus(); break;
     case "mus-guest-close": S.musGuest = null; render(); break;
+    case "mus-abs-open": S.musAbs = S.musDate; render(); break;
+    case "mus-abs-close": S.musAbs = null; render(); break;
+    case "mus-pick-open": { S.musPickOpen = !S.musPickOpen; render(); const f = $("#mus-pick"); if (f){ f.focus(); try { f.showPicker(); } catch(_){} } break; }
     case "share-app": shareApp(); break;
     case "install-hide": S.installHidden = true; render(); break;
     case "ask-decline": S.confirm = item.id; render(); break;
@@ -3281,6 +3305,24 @@ document.addEventListener("submit", async e => {
     const btn = $("#mf-save"); btn.disabled = true; btn.textContent = "Saving…";
     try { await saveMusFlag(key, kind, text); S.musFlag = null; toast(text ? "Saved" : "Cleared"); render(); }
     catch(err){ toast("Couldn't save that. " + err.message, true); btn.disabled = false; btn.textContent = "Save"; }
+    return;
+  }
+  if (e.target.id === "musAbsForm"){
+    const k = e.target.dataset.date, id = $("#ma-who")?.value, me = myProfile();
+    const p = S.items.find(i => i.id === id && isProfile(i));
+    if (!p){ toast("Choose who will be absent.", true); return; }
+    if (!isMusicLead() && (!me || p.id !== me.id)) return;
+    if (S.items.some(i => isAbsent(i) && i.date === k && lc(i.fullName || "") === lc(p.fullName || ""))){ toast(`${p.fullName} is already marked absent.`, true); return; }
+    const notes = $("#ma-notes").value.trim(), other = !me || p.id !== me.id;
+    const btn = $("#ma-save"); btn.disabled = true; btn.textContent = "Submitting…";
+    const html = `<p><strong>Dates of Absence:</strong> ${esc(fmtShort(k))}</p>` + (notes ? `<p>${esc(notes).replace(/\n/g,"<br>")}</p>` : "") + (other ? `<p><em>Entered by ${esc(S.me.name)}</em></p>` : "");
+    try {
+      const f = { ServiceDate: toSp(k), TimeOffDate: toSp(k), ServiceCategory: CONFIG.absentCategory, Status: "Absent", FullName: p.fullName || null, Notes: html };
+      if (p.personId) f.NameEmailLookupId = String(p.personId);
+      const nid = await API.addItem(f);
+      const row = normalize(nid, {}); Object.assign(row, { date: k, timeOff: k, category: CONFIG.absentCategory, status: "Absent", fullName: p.fullName, email: p.email, personId: p.personId, notes: html, first: p.first });
+      S.items.push(row); S.musAbs = null; toast(`Absence sent for ${p.fullName} · ${fmtShort(k)}`); render();
+    } catch(err){ toast("Couldn't submit the absence. " + err.message, true); btn.disabled = false; btn.textContent = "Submit Absence"; }
     return;
   }
   if (e.target.id === "musGuestForm"){
@@ -3470,7 +3512,7 @@ function annDraftSave(){
   if (u) S.annDraft.until = u.value;
 }
 document.addEventListener("change", async e => {
-  if (e.target.id === "mus-pick"){ if (e.target.value){ S.musDate = e.target.value; S.musFlag = null; S.musGuest = null; render(); } return; }
+  if (e.target.id === "mus-pick"){ if (e.target.value){ S.musExtra = e.target.value; S.musPickOpen = false; S.musAbs = null; S.musDate = e.target.value; S.musFlag = null; S.musGuest = null; render(); } return; }
   if (e.target.id === "abs-for"){ S.absFor = e.target.value || null; S.abs = null; S.absConfirm = null; S.absenceDone = false; render(); return; }
   if (e.target.id === "admin-pick"){ if (e.target.value){ S.adminExtra = e.target.value; S.adminDate = e.target.value; S.catEdit = null; S.noSvcAsk = null; S.pickOpen = false; render(); } return; }
   const row = e.target.closest(".admin-row");
