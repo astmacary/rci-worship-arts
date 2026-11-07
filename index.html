@@ -770,7 +770,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "112";
+const APP_VERSION = "113";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1937,7 +1937,7 @@ function viewSchedule(){
 
 function eventsOn(k){
   const md = k.slice(5);
-  const a = assignments().filter(i => approved(i) && i.date === k).sort((x, y) => Number(x.id) - Number(y.id));   // same order as the SharePoint list
+  const a = servingTeamRows(assignments().filter(i => approved(i) && i.date === k)).sort((x, y) => Number(x.id) - Number(y.id));   // same order as the SharePoint list
   const b = S.items.filter(i => isProfile(i) && !i.gone && i.birthday && i.birthday.slice(5) === md);
   const none = S.items.some(i => i.date === k && lc(i.category) === lc(CONFIG.noServiceCategory));
   return { a, b, none };
@@ -2119,7 +2119,7 @@ function viewNotes(){
 
 function viewTeam(){
   const k = S.arg;
-  const list = assignments().filter(i => i.date === k && approved(i)).sort((x, y) => Number(x.id) - Number(y.id));
+  const list = servingTeamRows(assignments().filter(i => i.date === k && approved(i))).sort((x, y) => Number(x.id) - Number(y.id));
   return `${backBar("Serving Team")}<p class="sub" style="margin-top:-12px">${esc(fmtLong(k))}</p>
     ${list.length ? sectioned(list, part => `<div class="roster">${part.map(i => tile(i, i.role, "member-of", i.id)).join("")}</div>`, "team")
       : `<div class="empty">No one is confirmed for this date yet.</div>`}`;
@@ -2321,6 +2321,31 @@ function posGroups(i){
   if (tm.length) out.push({ col: mus.col, label: "Musicians", choices: tm });
   return out;
 }
+const activeWorshipLeader = p => !!p?.singingLeader && !p.gone && lc(p.active).trim() === "active";
+function servingTeamRows(rows){
+  return rows.flatMap(i => {
+    if (!i.positions?.some(isWorshipLeader) || activeWorshipLeader(rosterOf(i))) return [i];
+    const positions = i.positions.filter(role => !isWorshipLeader(role));
+    return positions.length ? [{ ...i, positions, role: positions.join(" · ") }] : [];
+  });
+}
+function addWorshipLeaderCards(slots, date, dayRows){
+  if (dayRows.some(isNoService)) return;
+  const used = new Set(slots.filter(i => i.positions?.some(isWorshipLeader)).map(i => lc(i.fullName).trim()));
+  const absent = new Set(dayRows.filter(isAbsent).map(i => lc(i.fullName).trim()));
+  const weekday = fromKey(date).toLocaleDateString("en-US", { weekday: "long" });
+  const choices = serviceChoices();
+  const category = dayRows.find(i => !isAbsent(i) && !isNotesHolder(i) && svcFilled(i.category))?.category
+    || choices.find(c => c.startsWith(weekday)) || choices[0] || "";
+  for (const p of S.items.filter(i => isProfile(i) && activeWorshipLeader(i))) {
+    const name = lc(p.fullName).trim(), key = hideKey(date, p.fullName, WORSHIP_LEADER);
+    if (!name || used.has(name) || absent.has(name) || hiddenCards().has(key)
+      || replacedPos().has(replacedKey(date, p.fullName, WORSHIP_LEADER))) continue;
+    used.add(name);
+    slots.push({ ...p, date, category, positions: [WORSHIP_LEADER], role: WORSHIP_LEADER,
+      status: "Pending", published: "--", _key: p.id + "|" + WORSHIP_LEADER, _hk: key, _pos: WORSHIP_LEADER, _new: true });
+  }
+}
 /* Which header a person goes under: by the position on the row (singing → Singers, musician → Musicians);
    with no such position yet, by their Roster roles (singing roles first). Untagged people go under "Not Tagged". */
 function sectionOf(i){
@@ -2329,7 +2354,6 @@ function sectionOf(i){
   const ps = i.positions || [];
   if (ps.some(x => lc(x) === lc(CONFIG.notServingPosition)) || lc(i.status || "") === lc(CONFIG.notServingPosition)) return "N/S";
   if (ps.includes("Worship Leader")) return "Worship Leaders";
-  if (!ps.length && (rosterOf(i)?.positions || []).includes("Worship Leader")) return "Worship Leaders";
   if (ps.some(x => sing.includes(x))) return "Singers";
   if (ps.some(x => mus.includes(x))) return "Musicians";
   const roles = rosterOf(i)?.positions || [];
@@ -2593,7 +2617,8 @@ function viewAdmin(){
   // Leader who also sings Soprano shows under both. Confirming a card for someone who already holds another
   // position adds a second row for them.
   const slots = [], byPerson = new Map();
-  rows.forEach(i => { const key = lc(i.fullName || "") || "#" + i.id; if (!byPerson.has(key)) byPerson.set(key, []); byPerson.get(key).push(i); });
+  rows.filter(i => !i.positions?.length || !i.positions.every(isWorshipLeader) || activeWorshipLeader(rosterOf(i)))
+    .forEach(i => { const key = lc(i.fullName || "") || "#" + i.id; if (!byPerson.has(key)) byPerson.set(key, []); byPerson.get(key).push(i); });
   byPerson.forEach(list => {
     const held = new Set(), doneCols = new Set(); let blank = null;
     list.forEach(i => {
@@ -2606,13 +2631,16 @@ function viewAdmin(){
       else slots.push({ ...i, _key: i.id, _pos: "" });
     });
     const base = blank || list[0];
-    const tags = (rosterOf(base)?.positions || []).filter(r => posCol(r) && !held.has(r) && (lc(r) === "worship leader" || !doneCols.has(posCol(r))));
+    const profile = rosterOf(base);
+    const tags = (profile?.positions || []).filter(r => posCol(r) && !held.has(r) &&
+      (isWorshipLeader(r) ? activeWorshipLeader(profile) : !doneCols.has(posCol(r))));
     if (!tags.length){ if (blank) slots.push({ ...blank, _key: blank.id, _pos: "" }); return; }
     tags.forEach(r => {
       const key = base.id + "|" + r; if (hiddenCards().has(hideKey(base.date, base.fullName, r)) || replacedPos().has(replacedKey(base.date, base.fullName, r))) return;
       slots.push({ ...base, positions: [r], role: r, status: blank ? blank.status : "", published: blank ? blank.published : "", _key: key, _hk: hideKey(base.date, base.fullName, r), _pos: r, _new: !blank });
     });
   });
+  addWorshipLeaderCards(slots, k, dayRows);
   const card = i => {
     const sid = esc(i.id), key = esc(i._key), pre = i._pos;
     const locked = !i._new && i.status === "Accepted" && !(S.adminUnlocked || new Set()).has(i.id);
@@ -2635,10 +2663,10 @@ function viewAdmin(){
       : `<button class="iconbtn trash-btn" type="button" data-act="row-del" data-id="${key}" aria-label="Delete this position" title="Delete">${ICON.trash}</button>`;
     const shown = pre || i.role || "";
     const multi = slots.filter(x => x.id === i.id).length > 1;
-    return `<form class="panel admin-row c2 ${locked ? "locked" : ""} ${closedPos ? "pos-closed" : ""}" data-id="${sid}" data-key="${key}" data-pre="${esc(pre || "")}" ${i._new ? `data-new="${esc(pre)}"` : ""}>
+    return `<form class="panel admin-row c2 ${locked ? "locked" : ""} ${closedPos ? "pos-closed" : ""}" data-id="${sid}" data-key="${key}" data-pre="${esc(pre || "")}" ${i._new ? `data-new="${esc(pre)}" data-date="${esc(i.date)}" data-category="${esc(i.category)}"` : ""}>
       <div class="c2-main"><span class="c2-face" data-face>${faceFor(i.personId, i.fullName)}</span>
         <div class="c2-info"><b class="c2-name">${esc(i.fullName || "Not assigned")}</b><label class="c2-pospick" title="Choose a position"><span class="c2-pos" data-pos>${esc(shown || "Choose a position")}</span><span class="c2-dd" aria-hidden="true">${ICON.next}</span>${posField}</label><span class="sub c2-sub">${esc([i.category, fmtShort(i.date)].filter(Boolean).join(" · "))}</span></div>
-        <div class="c2-side">${i._new ? "" : statusPill(i)}<div class="c2-btns">${trash}${closedPos ? `<button class="iconbtn notes-btn" type="button" data-act="pos-open" data-key="${key}" aria-label="Change the position" title="Change position">${ICON.pencil}</button>` : ""}${locked
+        <div class="c2-side">${i._new && i.status !== "Pending" ? "" : statusPill(i)}<div class="c2-btns">${trash}${closedPos ? `<button class="iconbtn notes-btn" type="button" data-act="pos-open" data-key="${key}" aria-label="Change the position" title="Change position">${ICON.pencil}</button>` : ""}${locked
           ? `<button class="iconbtn notes-btn" type="button" data-act="admin-unlock" data-id="${sid}" aria-label="Edit this assignment" title="Edit">${ICON.pencil}</button>`
           : save}</div></div>
       </div>
@@ -2655,7 +2683,7 @@ function viewAdmin(){
     ${adminNoService(k, dayRows)}
     ${adminAbsent(dayRows)}
     ${adminAddPeople(k, dayRows)}
-    ${rows.length ? (ADMIN_SLOTS = slots, sectioned(slots, part => `<div class="list">${part.map(card).join("")}</div>`)) : `<div class="empty">Nothing else is scheduled on this date.</div>`}`;
+    ${slots.length ? (ADMIN_SLOTS = slots, sectioned(slots, part => `<div class="list">${part.map(card).join("")}</div>`)) : `<div class="empty">Nothing else is scheduled on this date.</div>`}`;
 }
 
 /* ---------- red badge on the app icon for pending requests ---------- */
@@ -3436,16 +3464,18 @@ document.addEventListener("submit", async e => {
     const picked = e.target.querySelector('[data-f="Position"]')?.value || "";
     const pos = picked.includes("|") ? picked.split("|")[1] : e.target.dataset.new;
     const base = S.items.find(i => i.id === e.target.dataset.id), col = posCol(pos); if (!base || !col) return;
-    if (pos !== e.target.dataset.new) rememberReplaced(base.date, base.fullName, e.target.dataset.new);
+    if (isWorshipLeader(pos) && !activeWorshipLeader(rosterOf(base))) return;
+    const {date, category} = e.target.dataset;
     const btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true; btn.classList.add("busy");
-    const f = { ServiceDate: toSp(base.date), ServiceCategory: base.category || null, FullName: base.fullName || null, Status: "Accepted", Published: "Request Approved" };
+    const f = { ServiceDate: toSp(date), ServiceCategory: category || null, FullName: base.fullName || null, Status: "Accepted", Published: "Request Approved" };
     if (col === SINGING_LEADER_COLUMN) syncSingingLeader(f, true);
     else { f[col + "@odata.type"] = "Collection(Edm.String)"; f[col] = [pos]; }
     if (base.personId) f.NameEmailLookupId = String(base.personId);
     try {
       const id = await API.addItem(f);
-      const it = normalize(id, f); Object.assign(it, { date: base.date, personId: base.personId, email: base.email });
-      S.items.push(it); toast(`Saved: ${base.fullName}, ${pos}, ${fmtShort(base.date)}`); render(); updateBadge();
+      if (pos !== e.target.dataset.new) rememberReplaced(date, base.fullName, e.target.dataset.new);
+      const it = normalize(id, f); Object.assign(it, { date, personId: base.personId, email: base.email });
+      S.items.push(it); toast(`Saved: ${base.fullName}, ${pos}, ${fmtShort(date)}`); render(); updateBadge();
     } catch(err){ toast("Couldn't save it. " + err.message, true); btn.disabled = false; btn.classList.remove("busy"); }
     return;
   }
