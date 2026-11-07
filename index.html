@@ -289,7 +289,7 @@ a.btn{text-decoration:none}
 .mus-row .btn.mus-mark{white-space:nowrap;padding:3px 7px}
 .mus-row .mus-inst{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mus-info{gap:4px}
-.mus-title{margin-top:-14px}
+.mus-title{margin-top:-14px;justify-content:space-between}
 .mus-actions{margin-top:-18px !important}
 .mus-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:8px}
 .mus-actions:empty{display:none}
@@ -303,7 +303,7 @@ a.btn{text-decoration:none}
 .mus-pick-row input{flex:0 1 180px}
 
 .home-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.home-top .home-docs{flex:none;margin-top:2px}
+.home-icons .home-docs{flex:none;margin-top:2px}
 .meet-form .meet-row{display:flex;gap:10px;flex-wrap:wrap}
 .meet-form .meet-row .field{flex:1 1 140px;min-width:0}
 .meet-form textarea,.meet-card textarea{width:100%;resize:vertical}
@@ -1864,7 +1864,13 @@ function viewMusicians(){
       <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><div class="mus-row"><b>${esc(i.fullName || "Not assigned")}</b>${extra}</div><div class="mus-row"><span class="mus-inst">${esc(inst)}</span>${editing ? "" : ctl}</div></div></div>
       ${musFlagLine(k, i.fullName)}${editing ? ctl : ""}</div>`; };
   const guest = i => !rosterOf(i);
-  return `${backBar("Musicians").replace('<div class="page-h"><h1>', '<div class="page-h mus-title"><h1>')}
+  return `<div class="page-h"><button class="back" data-act="back">${ICON.back}Back</button></div>
+    <div class="page-h mus-title"><h1>Musicians</h1>
+      <div class="home-icons">
+        <button class="iconbtn home-docs" data-act="tab" data-view="docs" aria-label="Team Documents" title="Team Documents">${ICON.docs}</button>
+        <button class="iconbtn home-docs" data-act="notes" data-date="${esc(k)}" aria-label="Worship Notes" title="Worship Notes">${ICON.notes}</button>
+      </div>
+    </div>
     <div class="date-chips" role="group" aria-label="Service dates">${chips}<button class="date-chip pick ${S.musPickOpen ? "on" : ""}" type="button" data-act="mus-pick-open" aria-expanded="${!!S.musPickOpen}" title="Pick another date"><span>Other</span><b>+</b><span>Date</span></button></div>
     ${S.musPickOpen ? `<div class="field pick-field"><label for="mus-pick">Pick a date</label><input type="date" id="mus-pick" value="${esc(k)}"></div>` : ""}
     <div class="day-h"><h2 class="section-label mus-day">${esc(fmtLong(k))}${cats.length ? ` · <span class="mus-cat">${esc(cats.join(", "))}</span>` : ""}</h2></div>
