@@ -770,7 +770,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "110";
+const APP_VERSION = "111";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -2495,7 +2495,8 @@ function adminNoService(k, rows){
   return `<button class="btn no-svc-btn" data-act="no-service" data-date="${k}">❌ Mark ${esc(fmtShort(k))} as No Service</button>`;
 }
 /* "Add People": one schedule row per Full Name (minus CONFIG.addPeopleSkip) on this date, skipping anyone
-   already on it or absent that day. Position is left blank for the admin to choose; Published is left at "--". */
+   already on it or absent that day. Single tagged musician roles are confirmed for active members.
+   Single tagged singing roles are added as pending, and other roles can be chosen in Edit Schedule. */
 function addPeopleList(k, dayRows){
   const have = new Set(dayRows.filter(i => i.fullName).map(i => lc(i.fullName)));
   const skip = new Set((CONFIG.addPeopleSkip || []).map(lc));
@@ -2953,26 +2954,22 @@ document.addEventListener("click", async e => {
       if (!cat){ toast("Choose a Service Category first.", true); break; }
       const rows = names.map(n => {
         const who = personForName(n), prof = who?.profile && isProfile(who.profile) ? who.profile : S.items.find(i => isProfile(i) && lc(i.fullName) === lc(n));
-        const f = { ServiceDate: toSp(k), ServiceCategory: cat, FullName: n, Status: "Pending" };
+        const f = { ServiceDate: toSp(k), ServiceCategory: cat, FullName: n, Status: "Pending", Published: "--" };
         if (who?.id) f.NameEmailLookupId = String(who.id);
         // Active musicians (Roster "Active Status" = Active) with exactly one musician role tagged are scheduled
         // straight away in that role, confirmed. Absent people never reach this list.
         const musChoices = (S.servingGroups || []).find(g => g.col === "MusicianPositions")?.choices || [];
         const mus = (prof?.positions || []).filter(r => musChoices.includes(r));
-        let auto = null;
         if (prof && !prof.gone && lc(prof.active) === "active" && mus.length === 1){
-          auto = mus[0];
-          f["MusicianPositions@odata.type"] = "Collection(Edm.String)"; f.MusicianPositions = [auto];
+          f["MusicianPositions@odata.type"] = "Collection(Edm.String)"; f.MusicianPositions = [mus[0]];
           f.Status = "Accepted"; f.Published = "Request Approved";
         } else if (prof && !prof.gone && lc(prof.active) === "active"){
           const voices = (prof.positions || []).filter(r => VOICES.includes(r));
           if (voices.length === 1){
-            auto = voices[0];
-            f["SingingPositions@odata.type"] = "Collection(Edm.String)"; f.SingingPositions = [auto];
-            f.Status = "Accepted"; f.Published = "Request Approved";
+            f["SingingPositions@odata.type"] = "Collection(Edm.String)"; f.SingingPositions = [voices[0]];
           }
         }
-        return { f, who, prof, auto };
+        return { f, who, prof };
       });
       S.addBusy = `Adding ${rows.length}…`; render();
       try {
@@ -2982,11 +2979,9 @@ document.addEventListener("click", async e => {
           if (!id) return; ok++;
           const r = rows[n], f = r.f;
           const it = normalize(id, { ...f, ServiceDate: undefined });
-          Object.assign(it, { date: k, category: cat, fullName: f.FullName, personId: r.who?.id || "", email: r.who?.profile?.email || r.prof?.email || "",
-            status: r.auto ? "Accepted" : "Pending", published: r.auto ? "Request Approved" : "--", positions: r.auto ? [r.auto] : [], role: r.auto || "" });
+          Object.assign(it, { date: k, category: cat, fullName: f.FullName, personId: r.who?.id || "", email: r.who?.profile?.email || r.prof?.email || "" });
           S.items.push(it);
         });
-        const autoN = rows.filter((r, n) => r.auto && ids[n]).length;
         toast(ok === rows.length ? `Added ${ok} people to ${fmtShort(k)}` : `Added ${ok} of ${rows.length}; try Add People again for the rest.`, ok !== rows.length);
         S.addAsk = null;
       } catch(err){ toast("Couldn't add people. " + err.message, true); }
