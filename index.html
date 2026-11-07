@@ -271,8 +271,8 @@ a.btn{text-decoration:none}
 .mus-card{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
 .mus-main{display:flex;align-items:center;gap:10px}
 .mus-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-.mus-info b{font-size:15px}
-.mus-inst{font-family:var(--display);font-weight:700;font-size:16px;color:var(--accent)}
+.mus-info b{font-size:17px}
+.mus-inst{font-family:var(--display);font-weight:700;font-size:19px;color:var(--accent)}
 .mus-side{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .mus-flags{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:13.5px}
 .mus-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
@@ -282,9 +282,10 @@ a.btn{text-decoration:none}
 .btn.mus-mark{font-size:12px;padding:3px 9px;min-height:28px}
 .mus-card .mus-btns{justify-content:center;margin:0 auto;gap:8px}
 .mus-card{gap:6px}
+.mus-card .av.sm{width:52px;height:52px;font-size:17px}
 .mus-title{margin-top:-14px}
 .mus-actions{margin-top:-18px !important}
-.mus-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:8px}
+.mus-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:8px}
 .mus-actions:empty{display:none}
 .mus-actions .btn.tpl-btn.mus-guest-btn{margin:0}
 .btn.tpl-btn.mus-abs-btn{border-color:var(--bad);color:var(--bad)}
@@ -763,7 +764,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "108";
+const APP_VERSION = "109";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
