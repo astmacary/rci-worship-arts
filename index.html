@@ -268,8 +268,6 @@ a.btn{text-decoration:none}
 .btn.decline{background:var(--stop);border-color:var(--stop);color:#FFFFFF}
 .btn.decline-soft{color:var(--bad)}
 .home-icons{display:flex;gap:8px;flex:none;margin-top:2px}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .iconbtn.home-docs{color:#fff;border-color:#fff}}
-:root[data-theme="dark"] .iconbtn.home-docs{color:#fff;border-color:#fff}
 .mus-card{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
 .mus-main{display:flex;align-items:center;gap:10px}
 .mus-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
@@ -754,7 +752,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "103";
+const APP_VERSION = "104";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1759,6 +1757,7 @@ const isMusicianProfile = p => !!p && isProfile(p) && !p.gone && (p.positions ||
 const isMusicLead = () => DEMO || isMeetHost() || MUSIC_LEAD_NAMES.includes(lc(myProfile()?.fullName || ""));
 function canSeeMusic(){
   if (DEMO || isMeetHost()) return true;
+  if (S.me && S.me.emails.some(e => lc(e) === "ashley.stmacary@therampchurch.com")) return true;   // Ashley can always see it
   const me = myProfile();
   return !!me && lc(me.active) === "active" && isMusicianProfile(me);
 }
@@ -1851,7 +1850,7 @@ function viewHome(){
   const myWall = myProfile() ? wallMessages(myProfile()) : [];
   return `
     <div class="home-top"><div><h1 class="greet">Welcome ${esc(first)}</h1><p class="sub">${esc(fmtLong(t))}</p></div>
-      <div class="home-icons">${canSeeMusic() ? `<button class="iconbtn notes-btn home-docs" data-act="tab" data-view="musicians" aria-label="Musicians" title="Musicians">${ICON_MUSIC}</button>` : ""}<button class="iconbtn notes-btn home-docs" data-act="tab" data-view="docs" aria-label="Team Documents" title="Team Documents">${ICON.docs}</button></div></div>
+      <div class="home-icons">${canSeeMusic() ? `<button class="iconbtn home-docs" data-act="tab" data-view="musicians" aria-label="Musicians" title="Musicians">${ICON_MUSIC}</button>` : ""}<button class="iconbtn home-docs" data-act="tab" data-view="docs" aria-label="Team Documents" title="Team Documents">${ICON.docs}</button></div></div>
     ${todayHero()}
     ${meetHostPanel()}
     ${meetMinePanel()}
