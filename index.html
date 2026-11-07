@@ -279,7 +279,12 @@ a.btn{text-decoration:none}
 .btn.tpl-btn.mus-guest-btn{width:auto;align-self:flex-end;margin:8px 0 0 auto;display:flex;padding:6px 14px;min-height:34px;font-size:13.5px}
 .mus-cat{color:var(--accent)}
 .mus-day{display:block}
-.btn.mus-mark{font-size:13px;padding:5px 12px}
+.btn.mus-mark{font-size:12px;padding:3px 9px;min-height:28px}
+.mus-side .mus-btns{flex-direction:column;align-items:stretch;gap:4px;margin:2px 0 0}
+.mus-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:8px}
+.mus-actions:empty{display:none}
+.mus-actions .btn.tpl-btn.mus-guest-btn{margin:0}
+.btn.tpl-btn.mus-abs-btn{border-color:var(--bad);color:var(--bad)}
 .btn.mus-mark.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .mus-flag-form{display:flex;flex-direction:column;gap:6px}
 .mus-flag-form input{width:100%}
@@ -755,7 +760,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "106";
+const APP_VERSION = "107";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1844,17 +1849,19 @@ function viewMusicians(){
   const noSvc = S.items.some(i => i.date === k && isNoService(i));
   const chips = dates.map(d => { const x = fromKey(d); return `<button class="date-chip ${d === k ? "on" : ""}" data-act="mus-date" data-date="${d}" aria-pressed="${d === k}"><span>${x.toLocaleDateString(undefined,{weekday:"short"})}</span><b>${x.getDate()}</b><span>${x.toLocaleDateString(undefined,{month:"short"})}</span></button>`; }).join("");
   const pill = i => approved(i) ? `<span class="pill ok">CONFIRMED</span>` : `<span class="pill pending-pill">PENDING</span>`;
-  const card = (i, inst, extra) => `<div class="panel mus-card">
-      <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><b>${esc(i.fullName || "Not assigned")}</b><span class="mus-inst">${esc(inst)}</span></div>${extra}</div>
-      ${musFlagLine(k, i.fullName)}${musFlagControls(k, i.fullName)}</div>`;
+  const card = (i, inst, extra) => { const ctl = musFlagControls(k, i.fullName), editing = ctl.startsWith("<form");
+    return `<div class="panel mus-card">
+      <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><b>${esc(i.fullName || "Not assigned")}</b><span class="mus-inst">${esc(inst)}</span></div>${extra.replace(/<\/div>$/, (editing ? "" : ctl) + "</div>")}</div>
+      ${musFlagLine(k, i.fullName)}${editing ? ctl : ""}</div>`; };
   const guest = i => !rosterOf(i);
   return `${backBar("Musicians")}
     <div class="date-chips" role="group" aria-label="Service dates">${chips}<button class="date-chip pick ${S.musPickOpen ? "on" : ""}" type="button" data-act="mus-pick-open" aria-expanded="${!!S.musPickOpen}" title="Pick another date"><span>Other</span><b>+</b><span>Date</span></button></div>
     ${S.musPickOpen ? `<div class="field pick-field"><label for="mus-pick">Pick a date</label><input type="date" id="mus-pick" value="${esc(k)}"></div>` : ""}
     <div class="day-h"><h2 class="section-label mus-day">${esc(fmtLong(k))}${cats.length ? ` · <span class="mus-cat">${esc(cats.join(", "))}</span>` : ""}</h2></div>
     ${noSvc ? `<div class="no-service"><span aria-hidden="true">❌</span> No Service</div>` : ""}
-    ${k >= t ? (S.musAbs === k ? musAbsForm(k) : `<button class="btn blue block" data-act="mus-abs-open">Submit Absence</button>`) : ""}
-    ${isMusicLead() ? (S.musGuest === k ? musGuestForm(k, cats) : `<button class="btn tpl-btn mus-guest-btn" data-act="mus-guest-open">＋ Add Guest Musician</button>`) : ""}
+    <div class="mus-actions">${k >= t && S.musAbs !== k ? `<button class="btn tpl-btn mus-guest-btn mus-abs-btn" data-act="mus-abs-open">Submit Absence</button>` : ""}${isMusicLead() && S.musGuest !== k ? `<button class="btn tpl-btn mus-guest-btn" data-act="mus-guest-open">＋ Add Guest Musician</button>` : ""}</div>
+    ${k >= t && S.musAbs === k ? musAbsForm(k) : ""}
+    ${isMusicLead() && S.musGuest === k ? musGuestForm(k, cats) : ""}
     <section><h2 class="section-label">Musicians <span class="count">${rows.length}</span></h2>
       ${rows.length ? `<div class="list">${rows.map(i => card(i, (i.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side">${guest(i) ? `<span class="pill">GUEST</span>` : ""}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No musicians scheduled for this date yet.</div>`}</section>
     <section><h2 class="section-label">Absent <span class="count ${abs.length ? "hot" : ""}">${abs.length}</span></h2>
