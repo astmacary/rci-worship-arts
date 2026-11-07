@@ -275,7 +275,10 @@ a.btn{text-decoration:none}
 .mus-inst{font-family:var(--display);font-weight:700;font-size:16px;color:var(--accent)}
 .mus-side{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
 .mus-flags{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:13.5px}
-.mus-btns{display:flex;gap:8px;flex-wrap:wrap}
+.mus-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+.btn.tpl-btn.mus-guest-btn{width:auto;align-self:flex-end;margin:8px 0 0 auto;display:flex;padding:6px 14px;min-height:34px;font-size:13.5px}
+.mus-cat{color:var(--accent)}
+.mus-day{display:block}
 .btn.mus-mark{font-size:13px;padding:5px 12px}
 .btn.mus-mark.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .mus-flag-form{display:flex;flex-direction:column;gap:6px}
@@ -752,7 +755,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "105";
+const APP_VERSION = "106";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1796,7 +1799,7 @@ function musFlagControls(k, name){
         <input id="mf-text" maxlength="80" value="${esc(f[kind] || "")}" placeholder="${kind === "tardy" ? "e.g. 15 minutes late" : "e.g. leaving at 11:30"}">
         <div class="actions"><button class="btn blue" type="submit" id="mf-save">Save</button>${f[kind] ? `<button class="btn decline-soft" type="button" data-act="mus-flag-clear">Clear</button>` : ""}<button class="btn" type="button" data-act="mus-flag-close">Cancel</button></div></form>`;
   }
-  return `<div class="mus-btns"><button type="button" class="btn mus-mark ${f.tardy ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="tardy">⏰ Tardy</button><button type="button" class="btn mus-mark ${f.early ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="early">🚪 Leave Early</button></div>`;
+  return `<div class="mus-btns"><button type="button" class="btn mus-mark ${f.tardy ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="tardy">⏰ Tardy</button><button type="button" class="btn mus-mark ${f.early ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="early">🚪 Leaving Early</button></div>`;
 }
 /* Submit an absence for the selected date: musicians for themselves; leads for any tagged musician. */
 function musAbsForm(k){
@@ -1848,10 +1851,10 @@ function viewMusicians(){
   return `${backBar("Musicians")}
     <div class="date-chips" role="group" aria-label="Service dates">${chips}<button class="date-chip pick ${S.musPickOpen ? "on" : ""}" type="button" data-act="mus-pick-open" aria-expanded="${!!S.musPickOpen}" title="Pick another date"><span>Other</span><b>+</b><span>Date</span></button></div>
     ${S.musPickOpen ? `<div class="field pick-field"><label for="mus-pick">Pick a date</label><input type="date" id="mus-pick" value="${esc(k)}"></div>` : ""}
-    <div class="day-h"><h2 class="section-label">${esc(fmtLong(k))}${cats.length ? ` · ${esc(cats.join(", "))}` : ""}</h2></div>
+    <div class="day-h"><h2 class="section-label mus-day">${esc(fmtLong(k))}${cats.length ? ` · <span class="mus-cat">${esc(cats.join(", "))}</span>` : ""}</h2></div>
     ${noSvc ? `<div class="no-service"><span aria-hidden="true">❌</span> No Service</div>` : ""}
-    ${k >= t ? (S.musAbs === k ? musAbsForm(k) : `<button class="btn tpl-btn" data-act="mus-abs-open">＋ Submit Absence</button>`) : ""}
-    ${isMusicLead() ? (S.musGuest === k ? musGuestForm(k, cats) : `<button class="btn tpl-btn" data-act="mus-guest-open">＋ Add Guest Musician</button>`) : ""}
+    ${k >= t ? (S.musAbs === k ? musAbsForm(k) : `<button class="btn blue block" data-act="mus-abs-open">Submit Absence</button>`) : ""}
+    ${isMusicLead() ? (S.musGuest === k ? musGuestForm(k, cats) : `<button class="btn tpl-btn mus-guest-btn" data-act="mus-guest-open">＋ Add Guest Musician</button>`) : ""}
     <section><h2 class="section-label">Musicians <span class="count">${rows.length}</span></h2>
       ${rows.length ? `<div class="list">${rows.map(i => card(i, (i.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side">${guest(i) ? `<span class="pill">GUEST</span>` : ""}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No musicians scheduled for this date yet.</div>`}</section>
     <section><h2 class="section-label">Absent <span class="count ${abs.length ? "hot" : ""}">${abs.length}</span></h2>
@@ -3257,6 +3260,7 @@ document.addEventListener("submit", async e => {
     try {
       for (const k of dates){
         const f = { ServiceDate: toSp(k), TimeOffDate: toSp(k), ServiceCategory: CONFIG.absentCategory, Status: "Absent", FullName: p.fullName || null, Notes: html };
+        { const mi = (p.positions || []).filter(x => musicChoices().includes(x)); if (mi.length){ f["MusicianPositions@odata.type"] = "Collection(Edm.String)"; f.MusicianPositions = mi; } }   // musician absences alert Patrick
         if (p.personId) f.NameEmailLookupId = String(p.personId);
         const id = await API.addItem(f);
         const row = normalize(id, {}); Object.assign(row, { date: k, timeOff: k, category: CONFIG.absentCategory, status: "Absent", fullName: p.fullName, email: p.email, personId: p.personId, notes: html, first: p.first });
@@ -3318,6 +3322,7 @@ document.addEventListener("submit", async e => {
     const html = `<p><strong>Dates of Absence:</strong> ${esc(fmtShort(k))}</p>` + (notes ? `<p>${esc(notes).replace(/\n/g,"<br>")}</p>` : "") + (other ? `<p><em>Entered by ${esc(S.me.name)}</em></p>` : "");
     try {
       const f = { ServiceDate: toSp(k), TimeOffDate: toSp(k), ServiceCategory: CONFIG.absentCategory, Status: "Absent", FullName: p.fullName || null, Notes: html };
+        { const mi = (p.positions || []).filter(x => musicChoices().includes(x)); if (mi.length){ f["MusicianPositions@odata.type"] = "Collection(Edm.String)"; f.MusicianPositions = mi; } }   // musician absences alert Patrick
       if (p.personId) f.NameEmailLookupId = String(p.personId);
       const nid = await API.addItem(f);
       const row = normalize(nid, {}); Object.assign(row, { date: k, timeOff: k, category: CONFIG.absentCategory, status: "Absent", fullName: p.fullName, email: p.email, personId: p.personId, notes: html, first: p.first });
