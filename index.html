@@ -280,7 +280,10 @@ a.btn{text-decoration:none}
 .mus-cat{color:var(--accent)}
 .mus-day{display:block}
 .btn.mus-mark{font-size:12px;padding:3px 9px;min-height:28px}
-.mus-side .mus-btns{flex-direction:column;align-items:stretch;gap:4px;margin:2px 0 0}
+.mus-card .mus-btns{justify-content:center;margin:0 auto;gap:8px}
+.mus-card{gap:6px}
+.mus-title{margin-top:-14px}
+.mus-actions{margin-top:-18px !important}
 .mus-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:8px}
 .mus-actions:empty{display:none}
 .mus-actions .btn.tpl-btn.mus-guest-btn{margin:0}
@@ -760,7 +763,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "107";
+const APP_VERSION = "108";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1851,10 +1854,10 @@ function viewMusicians(){
   const pill = i => approved(i) ? `<span class="pill ok">CONFIRMED</span>` : `<span class="pill pending-pill">PENDING</span>`;
   const card = (i, inst, extra) => { const ctl = musFlagControls(k, i.fullName), editing = ctl.startsWith("<form");
     return `<div class="panel mus-card">
-      <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><b>${esc(i.fullName || "Not assigned")}</b><span class="mus-inst">${esc(inst)}</span></div>${extra.replace(/<\/div>$/, (editing ? "" : ctl) + "</div>")}</div>
-      ${musFlagLine(k, i.fullName)}${editing ? ctl : ""}</div>`; };
+      <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><b>${esc(i.fullName || "Not assigned")}</b><span class="mus-inst">${esc(inst)}</span></div>${extra}</div>
+      ${musFlagLine(k, i.fullName)}${ctl}</div>`; };
   const guest = i => !rosterOf(i);
-  return `${backBar("Musicians")}
+  return `${backBar("Musicians").replace('<div class="page-h"><h1>', '<div class="page-h mus-title"><h1>')}
     <div class="date-chips" role="group" aria-label="Service dates">${chips}<button class="date-chip pick ${S.musPickOpen ? "on" : ""}" type="button" data-act="mus-pick-open" aria-expanded="${!!S.musPickOpen}" title="Pick another date"><span>Other</span><b>+</b><span>Date</span></button></div>
     ${S.musPickOpen ? `<div class="field pick-field"><label for="mus-pick">Pick a date</label><input type="date" id="mus-pick" value="${esc(k)}"></div>` : ""}
     <div class="day-h"><h2 class="section-label mus-day">${esc(fmtLong(k))}${cats.length ? ` · <span class="mus-cat">${esc(cats.join(", "))}</span>` : ""}</h2></div>
