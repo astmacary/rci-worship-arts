@@ -282,7 +282,13 @@ a.btn{text-decoration:none}
 .btn.mus-mark{font-size:12px;padding:3px 9px;min-height:28px}
 .mus-card .mus-btns{justify-content:center;margin:0 auto;gap:8px}
 .mus-card{gap:6px}
-.mus-card .av.sm{width:52px;height:52px;font-size:17px}
+.mus-card .av.sm{width:62px;height:62px;font-size:19px}
+.mus-row{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.mus-row b{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.mus-row .mus-btns{margin:0;flex-wrap:nowrap;gap:5px;flex:none}
+.mus-row .btn.mus-mark{white-space:nowrap;padding:3px 7px}
+.mus-row .mus-inst{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mus-info{gap:4px}
 .mus-title{margin-top:-14px}
 .mus-actions{margin-top:-18px !important}
 .mus-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:8px}
@@ -764,7 +770,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "109";
+const APP_VERSION = "110";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1855,8 +1861,8 @@ function viewMusicians(){
   const pill = i => approved(i) ? `<span class="pill ok">CONFIRMED</span>` : `<span class="pill pending-pill">PENDING</span>`;
   const card = (i, inst, extra) => { const ctl = musFlagControls(k, i.fullName), editing = ctl.startsWith("<form");
     return `<div class="panel mus-card">
-      <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><b>${esc(i.fullName || "Not assigned")}</b><span class="mus-inst">${esc(inst)}</span></div>${extra}</div>
-      ${musFlagLine(k, i.fullName)}${ctl}</div>`; };
+      <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><div class="mus-row"><b>${esc(i.fullName || "Not assigned")}</b>${extra}</div><div class="mus-row"><span class="mus-inst">${esc(inst)}</span>${editing ? "" : ctl}</div></div></div>
+      ${musFlagLine(k, i.fullName)}${editing ? ctl : ""}</div>`; };
   const guest = i => !rosterOf(i);
   return `${backBar("Musicians").replace('<div class="page-h"><h1>', '<div class="page-h mus-title"><h1>')}
     <div class="date-chips" role="group" aria-label="Service dates">${chips}<button class="date-chip pick ${S.musPickOpen ? "on" : ""}" type="button" data-act="mus-pick-open" aria-expanded="${!!S.musPickOpen}" title="Pick another date"><span>Other</span><b>+</b><span>Date</span></button></div>
