@@ -1540,7 +1540,8 @@ function viewDocs(){
       ${isEditor() ? (S.dlDel === n ? `<div class="confirm-row">Remove “${esc(l.title)}” from Team Documents? (The document itself isn't deleted.)
           <button type="button" class="btn decline-soft" data-act="dl-del-yes" data-n="${n}">Yes, Remove</button><button type="button" class="btn" data-act="dl-del-no">Keep It</button></div>`
         : `<button type="button" class="iconbtn trash-btn dl-del" data-act="dl-del" data-n="${n}" aria-label="Remove ${esc(l.title)}" title="Remove link">${ICON.trash}</button>`) : ""}</div>`; };
-  return `<div class="page-h"><h1>Team Documents</h1></div>
+  const head = S.stack.at(-1)?.view === "musicians" ? backBar("Team Documents") : `<div class="page-h"><h1>Team Documents</h1></div>`;
+  return `${head}
     ${L.loading ? `<div class="empty">Loading…</div>` : links.length ? `<div class="list">${links.map(row).join("")}</div>` : `<div class="empty">No documents yet.</div>`}
     ${isEditor() && !L.loading ? (S.dlAdd ? docLinkForm() : `<button class="btn tpl-btn" data-act="dl-open">＋ Link a Document</button>`) : ""}`;
 }
@@ -1867,7 +1868,7 @@ function viewMusicians(){
   return `<div class="page-h"><button class="back" data-act="back">${ICON.back}Back</button></div>
     <div class="page-h mus-title"><h1>Musicians</h1>
       <div class="home-icons">
-        <button class="iconbtn home-docs" data-act="tab" data-view="docs" aria-label="Team Documents" title="Team Documents">${ICON.docs}</button>
+        <button class="iconbtn home-docs" data-act="tab" data-view="docs" data-back aria-label="Team Documents" title="Team Documents">${ICON.docs}</button>
         <button class="iconbtn home-docs" data-act="notes" data-date="${esc(k)}" aria-label="Worship Notes" title="Worship Notes">${ICON.notes}</button>
       </div>
     </div>
@@ -2862,7 +2863,16 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act, item = S.items.find(i => i.id === b.dataset.id);
   switch(act){
-    case "tab": S.stack = []; S.absenceDone = false; S.absConfirm = null; if (b.dataset.view === "absence"){ S.absFor = null; S.abs = null; } if (b.dataset.view === "docs"){ if (S.docs) S.docs.items = null; S.docLinks = null; S.dlAdd = false; S.dlDel = null; } if (b.dataset.view === "calendar" && S.view !== "calendar"){ const t = new Date(); S.cal.month = new Date(t.getFullYear(), t.getMonth(), 1); S.cal.sel = todayKey(); } S.notesEdit = null; S.annEdit = false; S.annConfirm = null; go(b.dataset.view, null, false); break;
+    case "tab": {
+      const view = b.dataset.view, keepBack = b.hasAttribute("data-back");
+      if (!keepBack) S.stack = [];
+      S.absenceDone = false; S.absConfirm = null;
+      if (view === "absence"){ S.absFor = null; S.abs = null; }
+      if (view === "docs"){ if (S.docs) S.docs.items = null; S.docLinks = null; S.dlAdd = false; S.dlDel = null; }
+      if (view === "calendar" && S.view !== "calendar"){ const t = new Date(); S.cal.month = new Date(t.getFullYear(), t.getMonth(), 1); S.cal.sel = todayKey(); }
+      S.notesEdit = null; S.annEdit = false; S.annConfirm = null;
+      go(view, null, keepBack); break;
+    }
     case "notes-edit": S.notesEdit = S.arg; render(); setTimeout(() => $("#notes-editor")?.focus(), 0); break;
     case "notes-cancel": S.notesEdit = null; render(); break;
     case "fmt": {
