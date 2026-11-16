@@ -311,8 +311,11 @@ select.sing-pos{min-width:118px;font-size:14px;font-family:inherit;font-weight:7
 .mus-flag-form .actions{display:flex;gap:8px;flex-wrap:wrap}
 .iconbtn.mus-trash{width:30px;height:30px;min-width:30px;color:var(--bad)}
 .iconbtn.mus-trash svg{width:15px;height:15px}
-.mus-abs-card .mus-main{align-items:center;gap:12px}
-.mus-abs-card .mus-main b{font-size:17px}
+.mus-abs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px}
+@media (max-width:420px){.mus-abs-grid{grid-template-columns:repeat(3,1fr)}}
+.mus-abs-card{padding:10px 6px}
+.mus-abs-card .mus-main{flex-direction:column;align-items:center;gap:6px;text-align:center}
+.mus-abs-card .mus-main b{font-size:14px;line-height:1.2;word-break:break-word}
 .btn.mus-mark.mus-del-yes{border-color:var(--bad);color:#fff;background:var(--bad)}
 .mus-pick-row{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted)}
 .mus-pick-row input{flex:0 1 180px}
@@ -785,7 +788,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "136";
+const APP_VERSION = "137";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1951,7 +1954,7 @@ function viewMusicians(){
     ${k >= t && S.musAbs === k ? musAbsForm(k) : ""}
     ${isMusicLead() && S.musGuest === k ? musGuestForm(k, cats) : ""}
     <section><h2 class="section-label">Absent <span class="count ${abs.length ? "hot" : ""}">${abs.length}</span></h2>
-      ${abs.length ? `<div class="list">${abs.map(i => `<div class="panel mus-card mus-abs-card"><div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<b>${esc(i.fullName || "")}</b></div></div>`).join("")}</div>` : `<div class="empty">No one is absent this day.</div>`}</section>
+      ${abs.length ? `<div class="mus-abs-grid">${abs.map(i => `<div class="panel mus-card mus-abs-card"><div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<b>${esc(i.fullName || "")}</b></div></div>`).join("")}</div>` : `<div class="empty">No one is absent this day.</div>`}</section>
     <section><h2 class="section-label">Musicians <span class="count">${rows.length}</span></h2>
       ${rows.length ? `<div class="list">${rows.map(i => card(i, (i.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side">${guest(i) ? `<span class="pill">GUEST</span>` : ""}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No musicians scheduled for this date yet.</div>`}</section>
     ${seeSing ? `<section><h2 class="section-label">Singers <span class="count">${sing.length}</span></h2>
