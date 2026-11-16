@@ -294,6 +294,9 @@ a.btn{text-decoration:none}
 .mus-actions{margin-top:-18px !important}
 .mus-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:8px}
 .mus-actions:empty{display:none}
+.iconbtn.sing-edit{width:30px;height:30px;min-width:30px}
+.iconbtn.sing-edit svg{width:15px;height:15px}
+.mus-side{display:flex;align-items:center;gap:6px}
 .mus-actions .btn.tpl-btn.mus-guest-btn{margin:0}
 .btn.tpl-btn.mus-abs-btn{border-color:var(--bad);color:var(--bad)}
 .btn.mus-mark.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
@@ -771,7 +774,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "131";
+const APP_VERSION = "132";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1842,6 +1845,17 @@ function musFlagControls(k, name){
   return `<div class="mus-btns"><button type="button" class="btn mus-mark ${f.tardy ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="tardy">⏰ Tardy</button><button type="button" class="btn mus-mark ${f.early ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="early">🚪 Leaving Early</button></div>`;
 }
 /* Submit an absence for the selected date: musicians for themselves; leads for any tagged musician. */
+/* Edit a pending singer's part and status (Cassie and Ashley). */
+function singEditForm(i, parts, sc){
+  const leaderOk = activeWorshipLeader(rosterOf(i));
+  const cur = parts[0] || "";
+  const opts = sc.filter(x => !isWorshipLeader(x) || leaderOk || x === cur).map(x => `<option value="${esc(x)}" ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("");
+  return `<form class="panel stack" id="singEditForm" data-id="${esc(i.id)}">
+    <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><b>${esc(i.fullName)}</b></div></div>
+    <div class="field"><label for="se-pos">Position</label><select id="se-pos" required>${cur ? "" : `<option value="">— Choose a part —</option>`}${opts}</select></div>
+    <div class="field"><label for="se-status">Status</label><select id="se-status">${[["pending","Pending"],["confirmed","Confirmed"],["declined","Declined"]].map(([v,l]) => `<option value="${v}" ${v === "pending" ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <div class="actions"><button class="btn blue" type="submit" id="se-save">Save</button><button class="btn" type="button" data-act="sing-edit-close">Cancel</button></div></form>`;
+}
 function musAbsForm(k){
   const me = myProfile(), lead = isMusicLead();
   const people = S.items.filter(p => isProfile(p) && isMusicianProfile(p) && lc(p.active) !== "non active").sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
@@ -1912,7 +1926,7 @@ function viewMusicians(){
     <section><h2 class="section-label">Musicians <span class="count">${rows.length}</span></h2>
       ${rows.length ? `<div class="list">${rows.map(i => card(i, (i.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side">${guest(i) ? `<span class="pill">GUEST</span>` : ""}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No musicians scheduled for this date yet.</div>`}</section>
     ${seeSing ? `<section><h2 class="section-label">Singers <span class="count">${sing.length}</span></h2>
-      ${sing.length ? `<div class="list">${sing.map(i => card(i, singParts(i).join(" · "), `<div class="mus-side">${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No singers scheduled for this date yet.</div>`}</section>` : ""}
+      ${sing.length ? `<div class="list">${sing.map(i => S.singEdit === i.id ? singEditForm(i, singParts(i), sc) : card(i, singParts(i).join(" · "), `<div class="mus-side">${approved(i) ? "" : `<button type="button" class="iconbtn sing-edit" data-act="sing-edit" data-id="${esc(i.id)}" aria-label="Edit ${esc(i.fullName)}" title="Edit position and status">${ICON.pencil}</button>`}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No singers scheduled for this date yet.</div>`}</section>` : ""}
     <section><h2 class="section-label">Absent <span class="count ${abs.length ? "hot" : ""}">${abs.length}</span></h2>
       ${abs.length ? `<div class="list">${abs.map(i => card(i, (rosterOf(i)?.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side"><span class="pill bad">ABSENT</span></div>`)).join("")}</div>` : `<div class="empty">No musicians are absent this day.</div>`}</section>`;
 }
@@ -3313,6 +3327,8 @@ document.addEventListener("click", async e => {
     }
     case "mus-guest-open": S.musGuest = S.musDate; render(); $("#mg-name")?.focus(); break;
     case "mus-guest-close": S.musGuest = null; render(); break;
+    case "sing-edit": S.singEdit = b.dataset.id; render(); break;
+    case "sing-edit-close": S.singEdit = null; render(); break;
     case "mus-abs-open": S.musAbs = S.musDate; render(); break;
     case "mus-abs-close": S.musAbs = null; render(); break;
     case "mus-pick-open": { S.musPickOpen = !S.musPickOpen; render(); const f = $("#mus-pick"); if (f){ f.focus(); try { f.showPicker(); } catch(_){} } break; }
@@ -3479,6 +3495,27 @@ document.addEventListener("submit", async e => {
     const btn = $("#mf-save"); btn.disabled = true; btn.textContent = "Saving…";
     try { await saveMusFlag(key, kind, text); S.musFlag = null; toast(text ? "Saved" : "Cleared"); render(); }
     catch(err){ toast("Couldn't save that. " + err.message, true); btn.disabled = false; btn.textContent = "Save"; }
+    return;
+  }
+  if (e.target.id === "singEditForm"){
+    if (!(DEMO || isMeetHost() || isAshley())) return;
+    const item = S.items.find(i => i.id === e.target.dataset.id); if (!item) return;
+    const pos = $("#se-pos").value, st = $("#se-status").value;
+    if (!pos){ toast("Choose a part.", true); return; }
+    const f = {}, lead = isWorshipLeader(pos);
+    f["SingingPositions@odata.type"] = "Collection(Edm.String)"; f.SingingPositions = lead ? [] : [pos];
+    syncSingingLeader(f, lead, item.singingLeader);
+    if (st === "confirmed"){ f.Status = "Accepted"; f.Published = "Request Approved"; }
+    else if (st === "declined"){ f.Status = "Declined"; f.Published = CONFIG.publishedDenied; }
+    else f.Status = "Pending";
+    const btn = $("#se-save"); btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      if (!DEMO) await API.update(item.id, f);
+      const other = (item.positions || []).filter(x => !(S.servingGroups || []).find(g => g.col === "SingingPositions")?.choices.includes(x) && !isWorshipLeader(x));
+      item.positions = [pos, ...other]; item.role = item.positions.join(" · "); item.singingLeader = lead;
+      item.status = f.Status; if (f.Published) item.published = f.Published;
+      S.singEdit = null; toast(`Saved: ${item.fullName}, ${pos}, ${st === "confirmed" ? "Confirmed" : st === "declined" ? "Declined" : "Pending"}`); render(); updateBadge();
+    } catch(err){ toast("Couldn't save it. " + err.message, true); btn.disabled = false; btn.textContent = "Save"; }
     return;
   }
   if (e.target.id === "musAbsForm"){
