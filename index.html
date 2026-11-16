@@ -294,8 +294,13 @@ a.btn{text-decoration:none}
 .mus-actions{margin-top:-18px !important}
 .mus-actions{display:flex;justify-content:center;gap:8px;flex-wrap:wrap;margin-top:8px}
 .mus-actions:empty{display:none}
-.iconbtn.sing-edit{width:30px;height:30px;min-width:30px}
-.iconbtn.sing-edit svg{width:15px;height:15px}
+.pill.sing-pill{border:0;cursor:pointer;font:inherit;font-size:11px;font-weight:800}
+.sing-choices{display:flex;justify-content:center;gap:8px}
+.sing-choices .btn{margin:0 !important}
+.btn.tpl-btn.sing-ok{border-color:var(--ok);color:var(--ok)}
+select.sing-pos{min-width:118px;font-size:14px;font-family:inherit;font-weight:700;color:inherit;background:transparent;border:1px solid var(--line);border-radius:8px;padding:2px 6px;max-width:100%}
+.mus-row .mus-inst:has(select){overflow:visible;flex:none}
+.mus-row:has(select.sing-pos){flex-wrap:wrap;row-gap:6px}
 .mus-side{display:flex;align-items:center;gap:6px}
 .mus-actions .btn.tpl-btn.mus-guest-btn{margin:0}
 .btn.tpl-btn.mus-abs-btn{border-color:var(--bad);color:var(--bad)}
@@ -774,7 +779,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "132";
+const APP_VERSION = "133";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1845,16 +1850,22 @@ function musFlagControls(k, name){
   return `<div class="mus-btns"><button type="button" class="btn mus-mark ${f.tardy ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="tardy">⏰ Tardy</button><button type="button" class="btn mus-mark ${f.early ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="early">🚪 Leaving Early</button></div>`;
 }
 /* Submit an absence for the selected date: musicians for themselves; leads for any tagged musician. */
-/* Edit a pending singer's part and status (Cassie and Ashley). */
-function singEditForm(i, parts, sc){
-  const leaderOk = activeWorshipLeader(rosterOf(i));
-  const cur = parts[0] || "";
-  const opts = sc.filter(x => !isWorshipLeader(x) || leaderOk || x === cur).map(x => `<option value="${esc(x)}" ${x === cur ? "selected" : ""}>${esc(x)}</option>`).join("");
-  return `<form class="panel stack" id="singEditForm" data-id="${esc(i.id)}">
-    <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><b>${esc(i.fullName)}</b></div></div>
-    <div class="field"><label for="se-pos">Position</label><select id="se-pos" required>${cur ? "" : `<option value="">— Choose a part —</option>`}${opts}</select></div>
-    <div class="field"><label for="se-status">Status</label><select id="se-status">${[["pending","Pending"],["confirmed","Confirmed"],["declined","Declined"]].map(([v,l]) => `<option value="${v}" ${v === "pending" ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-    <div class="actions"><button class="btn blue" type="submit" id="se-save">Save</button><button class="btn" type="button" data-act="sing-edit-close">Cancel</button></div></form>`;
+/* Cassie and Ashley: confirm/decline a pending singer, or pick one part when two are listed. */
+async function saveSinger(id, { status, pos }){
+  if (!(DEMO || isMeetHost() || isAshley())) return;
+  const item = S.items.find(i => i.id === id); if (!item) return;
+  const f = {};
+  if (pos){ const lead = isWorshipLeader(pos); f["SingingPositions@odata.type"] = "Collection(Edm.String)"; f.SingingPositions = lead ? [] : [pos]; syncSingingLeader(f, lead, item.singingLeader); }
+  if (status === "confirmed"){ f.Status = "Accepted"; f.Published = "Request Approved"; }
+  else if (status === "declined"){ f.Status = "Declined"; f.Published = CONFIG.publishedDenied; }
+  try {
+    if (!DEMO) await API.update(item.id, f);
+    if (pos){ const sc = (S.servingGroups || []).find(g => g.col === "SingingPositions")?.choices || [];
+      item.positions = [pos, ...(item.positions || []).filter(x => !sc.includes(x) && !isWorshipLeader(x))]; item.role = item.positions.join(" · "); item.singingLeader = isWorshipLeader(pos); }
+    if (f.Status) item.status = f.Status; if (f.Published) item.published = f.Published;
+    S.singStatus = null;
+    toast(`Saved: ${item.fullName}${pos ? `, ${pos}` : ""}${status ? `, ${status === "confirmed" ? "Confirmed" : "Declined"}` : ""}`); render(); updateBadge();
+  } catch(err){ toast("Couldn't save it. " + err.message, true); render(); }
 }
 function musAbsForm(k){
   const me = myProfile(), lead = isMusicLead();
@@ -1906,7 +1917,7 @@ function viewMusicians(){
   const pill = i => approved(i) ? `<span class="pill ok">CONFIRMED</span>` : `<span class="pill pending-pill">PENDING</span>`;
   const card = (i, inst, extra) => { const ctl = musFlagControls(k, i.fullName), editing = ctl.startsWith("<form");
     return `<div class="panel mus-card">
-      <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><div class="mus-row"><b>${esc(i.fullName || "Not assigned")}</b>${extra}</div><div class="mus-row"><span class="mus-inst">${esc(inst)}</span>${editing ? "" : ctl}</div></div></div>
+      <div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<div class="mus-info"><div class="mus-row"><b>${esc(i.fullName || "Not assigned")}</b>${extra}</div><div class="mus-row"><span class="mus-inst">${inst.startsWith("<select") ? inst : esc(inst)}</span>${editing ? "" : ctl}</div></div></div>
       ${musFlagLine(k, i.fullName)}${editing ? ctl : ""}</div>`; };
   const guest = i => !rosterOf(i);
   return `<div class="page-h"><button class="back" data-act="back">${ICON.back}Back</button></div>
@@ -1926,7 +1937,11 @@ function viewMusicians(){
     <section><h2 class="section-label">Musicians <span class="count">${rows.length}</span></h2>
       ${rows.length ? `<div class="list">${rows.map(i => card(i, (i.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side">${guest(i) ? `<span class="pill">GUEST</span>` : ""}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No musicians scheduled for this date yet.</div>`}</section>
     ${seeSing ? `<section><h2 class="section-label">Singers <span class="count">${sing.length}</span></h2>
-      ${sing.length ? `<div class="list">${sing.map(i => S.singEdit === i.id ? singEditForm(i, singParts(i), sc) : card(i, singParts(i).join(" · "), `<div class="mus-side">${approved(i) ? "" : `<button type="button" class="iconbtn sing-edit" data-act="sing-edit" data-id="${esc(i.id)}" aria-label="Edit ${esc(i.fullName)}" title="Edit position and status">${ICON.pencil}</button>`}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No singers scheduled for this date yet.</div>`}</section>` : ""}
+      ${sing.length ? `<div class="list">${sing.map(i => { const parts = singParts(i);
+        const inst = parts.length > 1 ? `<select class="sing-pos" data-id="${esc(i.id)}" aria-label="Choose ${esc(i.fullName)}'s part"><option value="">${esc(parts.join(" · "))}</option>${parts.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join("")}</select>` : parts.join(" · ");
+        const tag = approved(i) ? pill(i) : `<button type="button" class="pill pending-pill sing-pill" data-act="sing-status" data-id="${esc(i.id)}" aria-expanded="${S.singStatus === i.id}">PENDING ▾</button>`;
+        const choose = S.singStatus === i.id ? `<div class="sing-choices"><button type="button" class="btn tpl-btn mus-guest-btn sing-ok" data-act="sing-set" data-id="${esc(i.id)}" data-v="confirmed">Confirmed</button><button type="button" class="btn tpl-btn mus-guest-btn mus-abs-btn" data-act="sing-set" data-id="${esc(i.id)}" data-v="declined">Declined</button></div>` : "";
+        return card(i, inst, `<div class="mus-side">${tag}</div>`).replace(/<\/div>$/, choose + "</div>"); }).join("")}</div>` : `<div class="empty">No singers scheduled for this date yet.</div>`}</section>` : ""}
     <section><h2 class="section-label">Absent <span class="count ${abs.length ? "hot" : ""}">${abs.length}</span></h2>
       ${abs.length ? `<div class="list">${abs.map(i => card(i, (rosterOf(i)?.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side"><span class="pill bad">ABSENT</span></div>`)).join("")}</div>` : `<div class="empty">No musicians are absent this day.</div>`}</section>`;
 }
@@ -3327,8 +3342,8 @@ document.addEventListener("click", async e => {
     }
     case "mus-guest-open": S.musGuest = S.musDate; render(); $("#mg-name")?.focus(); break;
     case "mus-guest-close": S.musGuest = null; render(); break;
-    case "sing-edit": S.singEdit = b.dataset.id; render(); break;
-    case "sing-edit-close": S.singEdit = null; render(); break;
+    case "sing-status": S.singStatus = S.singStatus === b.dataset.id ? null : b.dataset.id; render(); break;
+    case "sing-set": saveSinger(b.dataset.id, { status: b.dataset.v }); break;
     case "mus-abs-open": S.musAbs = S.musDate; render(); break;
     case "mus-abs-close": S.musAbs = null; render(); break;
     case "mus-pick-open": { S.musPickOpen = !S.musPickOpen; render(); const f = $("#mus-pick"); if (f){ f.focus(); try { f.showPicker(); } catch(_){} } break; }
@@ -3495,27 +3510,6 @@ document.addEventListener("submit", async e => {
     const btn = $("#mf-save"); btn.disabled = true; btn.textContent = "Saving…";
     try { await saveMusFlag(key, kind, text); S.musFlag = null; toast(text ? "Saved" : "Cleared"); render(); }
     catch(err){ toast("Couldn't save that. " + err.message, true); btn.disabled = false; btn.textContent = "Save"; }
-    return;
-  }
-  if (e.target.id === "singEditForm"){
-    if (!(DEMO || isMeetHost() || isAshley())) return;
-    const item = S.items.find(i => i.id === e.target.dataset.id); if (!item) return;
-    const pos = $("#se-pos").value, st = $("#se-status").value;
-    if (!pos){ toast("Choose a part.", true); return; }
-    const f = {}, lead = isWorshipLeader(pos);
-    f["SingingPositions@odata.type"] = "Collection(Edm.String)"; f.SingingPositions = lead ? [] : [pos];
-    syncSingingLeader(f, lead, item.singingLeader);
-    if (st === "confirmed"){ f.Status = "Accepted"; f.Published = "Request Approved"; }
-    else if (st === "declined"){ f.Status = "Declined"; f.Published = CONFIG.publishedDenied; }
-    else f.Status = "Pending";
-    const btn = $("#se-save"); btn.disabled = true; btn.textContent = "Saving…";
-    try {
-      if (!DEMO) await API.update(item.id, f);
-      const other = (item.positions || []).filter(x => !(S.servingGroups || []).find(g => g.col === "SingingPositions")?.choices.includes(x) && !isWorshipLeader(x));
-      item.positions = [pos, ...other]; item.role = item.positions.join(" · "); item.singingLeader = lead;
-      item.status = f.Status; if (f.Published) item.published = f.Published;
-      S.singEdit = null; toast(`Saved: ${item.fullName}, ${pos}, ${st === "confirmed" ? "Confirmed" : st === "declined" ? "Declined" : "Pending"}`); render(); updateBadge();
-    } catch(err){ toast("Couldn't save it. " + err.message, true); btn.disabled = false; btn.textContent = "Save"; }
     return;
   }
   if (e.target.id === "musAbsForm"){
@@ -3730,6 +3724,7 @@ function annDraftSave(){
   if (u) S.annDraft.until = u.value;
 }
 document.addEventListener("change", async e => {
+  if (e.target.classList?.contains("sing-pos") && e.target.value){ saveSinger(e.target.dataset.id, { pos: e.target.value }); return; }
   if (e.target.id === "mus-pick"){ if (e.target.value){ S.musExtra = e.target.value; S.musPickOpen = false; S.musAbs = null; S.musDate = e.target.value; S.musFlag = null; S.musGuest = null; render(); } return; }
   if (e.target.id === "abs-for"){ S.absFor = e.target.value || null; S.abs = null; S.absConfirm = null; S.absenceDone = false; render(); return; }
   if (e.target.id === "admin-pick"){ if (e.target.value){ S.adminExtra = e.target.value; S.adminDate = e.target.value; S.catEdit = null; S.noSvcAsk = null; S.pickOpen = false; render(); } return; }
