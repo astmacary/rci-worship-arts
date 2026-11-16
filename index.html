@@ -771,7 +771,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "130";
+const APP_VERSION = "131";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1883,7 +1883,9 @@ function viewMusicians(){
   // Singers (Cassie and Ashley only): confirmed and pending singers that day.
   const seeSing = DEMO || isMeetHost() || isAshley();
   const sc = (S.servingGroups || []).find(g => g.col === "SingingPositions")?.choices || [];
-  const sing = seeSing ? S.items.filter(i => i.date === k && !isProfile(i) && !isAbsent(i) && i.fullName && !/declin|rejected/i.test((i.status || "") + " " + (i.published || "")) && (i.positions || []).some(x => sc.includes(x))).sort((a, b) => (a.fullName || "").localeCompare(b.fullName || "")) : [];
+  // Pending rows often have no position yet; use the singer's Roster parts then (like Edit Schedule does).
+  const singParts = i => { const own = (i.positions || []).filter(x => sc.includes(x)); return own.length || approved(i) ? own : (rosterOf(i)?.positions || []).filter(x => sc.includes(x)); };
+  const sing = seeSing ? S.items.filter(i => i.date === k && !isProfile(i) && !isAbsent(i) && i.fullName && !/declin|rejected/i.test((i.status || "") + " " + (i.published || "")) && singParts(i).length).sort((a, b) => (a.fullName || "").localeCompare(b.fullName || "")) : [];
   const cats = [...new Set(S.items.filter(i => !isProfile(i) && i.date === k && !isAbsent(i) && !isNoService(i) && i.category).map(i => i.category))];
   const noSvc = S.items.some(i => i.date === k && isNoService(i));
   const chips = dates.map(d => { const x = fromKey(d); return `<button class="date-chip ${d === k ? "on" : ""}" data-act="mus-date" data-date="${d}" aria-pressed="${d === k}"><span>${x.toLocaleDateString(undefined,{weekday:"short"})}</span><b>${x.getDate()}</b><span>${x.toLocaleDateString(undefined,{month:"short"})}</span></button>`; }).join("");
@@ -1910,7 +1912,7 @@ function viewMusicians(){
     <section><h2 class="section-label">Musicians <span class="count">${rows.length}</span></h2>
       ${rows.length ? `<div class="list">${rows.map(i => card(i, (i.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side">${guest(i) ? `<span class="pill">GUEST</span>` : ""}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No musicians scheduled for this date yet.</div>`}</section>
     ${seeSing ? `<section><h2 class="section-label">Singers <span class="count">${sing.length}</span></h2>
-      ${sing.length ? `<div class="list">${sing.map(i => card(i, (i.positions || []).filter(x => sc.includes(x)).join(" · "), `<div class="mus-side">${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No singers scheduled for this date yet.</div>`}</section>` : ""}
+      ${sing.length ? `<div class="list">${sing.map(i => card(i, singParts(i).join(" · "), `<div class="mus-side">${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No singers scheduled for this date yet.</div>`}</section>` : ""}
     <section><h2 class="section-label">Absent <span class="count ${abs.length ? "hot" : ""}">${abs.length}</span></h2>
       ${abs.length ? `<div class="list">${abs.map(i => card(i, (rosterOf(i)?.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side"><span class="pill bad">ABSENT</span></div>`)).join("")}</div>` : `<div class="empty">No musicians are absent this day.</div>`}</section>`;
 }
