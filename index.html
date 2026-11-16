@@ -306,18 +306,13 @@ select.sing-pos{min-width:118px;font-size:14px;font-family:inherit;font-weight:7
 .mus-actions .btn.tpl-btn.mus-guest-btn{margin:0}
 .btn.tpl-btn.mus-abs-btn{border-color:var(--bad);color:var(--bad)}
 .btn.mus-mark.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
-.mus-flag-form{display:flex;flex-direction:column;gap:10px;background:var(--accent-soft);border-radius:12px;padding:12px}
-.mf-title{font-weight:800;font-size:15px}
-.mf-chips{display:flex;gap:6px;flex-wrap:wrap}
-.mf-chip{flex:1;min-width:44px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;font-weight:700;cursor:pointer}
-.mf-chip.on{border-color:var(--accent);background:var(--accent);color:#fff}
-.mf-input{display:flex;align-items:center;gap:10px}
-.mf-input input{flex:1;min-width:0;height:42px;font-size:17px;font-weight:700;text-align:center}
-.mf-input span{color:var(--muted);font-weight:600;white-space:nowrap}
-.mf-actions{display:flex;gap:8px;justify-content:flex-end}
-.mf-actions .btn{flex:1}
+.mus-flag-form{display:flex;flex-direction:column;gap:6px}
+.mus-flag-form input{width:100%}
+.mus-flag-form .actions{display:flex;gap:8px;flex-wrap:wrap}
 .iconbtn.mus-trash{width:30px;height:30px;min-width:30px;color:var(--bad)}
 .iconbtn.mus-trash svg{width:15px;height:15px}
+.mus-abs-card .mus-main{align-items:center;gap:12px}
+.mus-abs-card .mus-main b{font-size:17px}
 .btn.mus-mark.mus-del-yes{border-color:var(--bad);color:#fff;background:var(--bad)}
 .mus-pick-row{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted)}
 .mus-pick-row input{flex:0 1 180px}
@@ -790,7 +785,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "135";
+const APP_VERSION = "136";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1850,20 +1845,16 @@ function musFlagLine(k, name){
   return `<div class="mus-flags">${f.tardy && !isMusicLead() ? `<span class="pill warn">TARDY</span><span>${esc(f.tardy)}</span>` : ""}${f.early ? `<span class="pill warn">LEAVING EARLY</span><span>${esc(f.early)}</span>` : ""}</div>`;
 }
 const tardyLabel = t => { if (!t) return "Tardy"; const n = String(t).match(/\d+/); return n ? `Tardy -${n[0]} mins` : `Tardy - ${t}`; };
-const earlyLabel = t => { if (!t) return "Leaving Early"; const m = String(t).match(/^(\d{1,2}):(\d{2})$/); if (!m) return `Leaving Early - ${t}`; const h = +m[1]; return `Leaving Early ${((h + 11) % 12) + 1}:${m[2]} ${h < 12 ? "AM" : "PM"}`; };
+const earlyLabel = t => { if (!t) return "Leaving Early"; return `Leaving Early ${t}`; };
 function musFlagControls(k, name, id){
   if (!isMusicLead()) return "";
   const key = musKey(k, name), f = musFlags()[key] || {};
   if (S.musFlag && S.musFlag.key === key){
-    const kind = S.musFlag.kind, cur = f[kind] || "";
-    const field = kind === "tardy"
-      ? `<div class="mf-chips" role="group" aria-label="Minutes late">${[5,10,15,20,30,45].map(n => `<button type="button" class="mf-chip ${String(cur.match(/\d+/)?.[0]) === String(n) ? "on" : ""}" data-act="mf-pick" data-v="${n}">${n}</button>`).join("")}</div>
-         <div class="mf-input"><input id="mf-text" type="number" inputmode="numeric" min="1" max="240" value="${esc(cur.match(/\d+/)?.[0] || "")}" placeholder="Other"><span>minutes late</span></div>`
-      : `<div class="mf-input"><input id="mf-text" type="time" value="${esc(/^\d{1,2}:\d{2}$/.test(cur) ? cur.padStart(5, "0") : "")}"><span>leaving at</span></div>`;
+    const kind = S.musFlag.kind, label = kind === "tardy" ? "Tardy" : "Leaving Early";
     return `<form class="mus-flag-form" id="musFlagForm" data-key="${esc(key)}" data-kind="${kind}">
-        <div class="mf-title">${kind === "tardy" ? "⏰ How late will they be?" : "🚪 What time are they leaving?"}</div>
-        ${field}
-        <div class="mf-actions"><button class="btn" type="button" data-act="mus-flag-close">Cancel</button>${cur ? `<button class="btn decline-soft" type="button" data-act="mus-flag-clear">Clear</button>` : ""}<button class="btn blue" type="submit" id="mf-save">Save</button></div></form>`;
+        <label for="mf-text">${label}${kind === "tardy" ? " (minutes late)" : " (what time?)"}</label>
+        <input id="mf-text" maxlength="80" ${kind === "tardy" ? `inputmode="numeric"` : ""} value="${esc(f[kind] || "")}" placeholder="${kind === "tardy" ? "e.g. 20" : "e.g. 11:30"}">
+        <div class="actions"><button class="btn blue" type="submit" id="mf-save">Save</button>${f[kind] ? `<button class="btn decline-soft" type="button" data-act="mus-flag-clear">Clear</button>` : ""}<button class="btn" type="button" data-act="mus-flag-close">Cancel</button></div></form>`;
   }
   const del = S.musDel === id
     ? `<button type="button" class="btn mus-mark mus-del-yes" data-act="mus-del" data-id="${esc(id)}">Delete?</button>`
@@ -1934,7 +1925,8 @@ function viewMusicians(){
   const singAbs = seeSing ? S.items.filter(i => i.date === k && isAbsent(i) && !abs0.includes(i) && (rosterOf(i)?.positions || []).some(x => sc.includes(x))) : [];
   const abs = [...abs0, ...singAbs].sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
   const absPart = i => (rosterOf(i)?.positions || []).filter(x => mc.includes(x) || sc.includes(x)).join(" · ");
-  const sing = seeSing ? S.items.filter(i => i.date === k && !isProfile(i) && !isAbsent(i) && i.fullName && !/declin|rejected/i.test((i.status || "") + " " + (i.published || "")) && singParts(i).length).sort((a, b) => (a.fullName || "").localeCompare(b.fullName || "")) : [];
+  const singRank = i => { const p = singParts(i); if (p.some(isWorshipLeader)) return approved(i) ? 0 : 1; const o = ["Soprano", "Tenor", "Alto"].findIndex(x => p.includes(x)); return o < 0 ? 5 : 2 + o; };
+  const sing = seeSing ? S.items.filter(i => i.date === k && !isProfile(i) && !isAbsent(i) && i.fullName && !/declin|rejected/i.test((i.status || "") + " " + (i.published || "")) && singParts(i).length).sort((a, b) => singRank(a) - singRank(b) || (a.fullName || "").localeCompare(b.fullName || "")) : [];
   const cats = [...new Set(S.items.filter(i => !isProfile(i) && i.date === k && !isAbsent(i) && !isNoService(i) && i.category).map(i => i.category))];
   const noSvc = S.items.some(i => i.date === k && isNoService(i));
   const chips = dates.map(d => { const x = fromKey(d); return `<button class="date-chip ${d === k ? "on" : ""}" data-act="mus-date" data-date="${d}" aria-pressed="${d === k}"><span>${x.toLocaleDateString(undefined,{weekday:"short"})}</span><b>${x.getDate()}</b><span>${x.toLocaleDateString(undefined,{month:"short"})}</span></button>`; }).join("");
@@ -1959,7 +1951,7 @@ function viewMusicians(){
     ${k >= t && S.musAbs === k ? musAbsForm(k) : ""}
     ${isMusicLead() && S.musGuest === k ? musGuestForm(k, cats) : ""}
     <section><h2 class="section-label">Absent <span class="count ${abs.length ? "hot" : ""}">${abs.length}</span></h2>
-      ${abs.length ? `<div class="list">${abs.map(i => card(i, absPart(i), `<div class="mus-side"><span class="pill bad">ABSENT</span></div>`)).join("")}</div>` : `<div class="empty">No one is absent this day.</div>`}</section>
+      ${abs.length ? `<div class="list">${abs.map(i => `<div class="panel mus-card mus-abs-card"><div class="mus-main">${avatar(rosterOf(i) || i, "sm")}<b>${esc(i.fullName || "")}</b></div></div>`).join("")}</div>` : `<div class="empty">No one is absent this day.</div>`}</section>
     <section><h2 class="section-label">Musicians <span class="count">${rows.length}</span></h2>
       ${rows.length ? `<div class="list">${rows.map(i => card(i, (i.positions || []).filter(x => mc.includes(x)).join(" · "), `<div class="mus-side">${guest(i) ? `<span class="pill">GUEST</span>` : ""}${pill(i)}</div>`)).join("")}</div>` : `<div class="empty">No musicians scheduled for this date yet.</div>`}</section>
     ${seeSing ? `<section><h2 class="section-label">Singers <span class="count">${sing.length}</span></h2>
