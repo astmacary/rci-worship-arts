@@ -288,7 +288,8 @@ a.btn{text-decoration:none}
 .mus-row b{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .mus-row .mus-btns{margin:0;flex-wrap:nowrap;gap:5px;flex:none}
 .mus-row .btn.mus-mark{white-space:nowrap;padding:3px 7px}
-.mus-row .mus-inst{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mus-row .mus-inst{flex:none;white-space:nowrap}
+.mus-row:has(.mus-btns){flex-wrap:wrap;row-gap:6px}
 .mus-info{gap:4px}
 .mus-title{margin-top:-14px;justify-content:space-between}
 .mus-actions{margin-top:-18px !important}
@@ -779,7 +780,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "133";
+const APP_VERSION = "134";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -1835,19 +1836,21 @@ async function saveMusFlag(key, kind, text){
 const musKey = (k, name) => `${k}|${lc(name || "")}`;
 function musFlagLine(k, name){
   const f = musFlags()[musKey(k, name)]; if (!f) return "";
-  return `<div class="mus-flags">${f.tardy ? `<span class="pill warn">TARDY</span><span>${esc(f.tardy)}</span>` : ""}${f.early ? `<span class="pill warn">LEAVING EARLY</span><span>${esc(f.early)}</span>` : ""}</div>`;
+  if (isMusicLead() && !f.early) return "";   // leads see the tardy time on the Tardy button itself
+  return `<div class="mus-flags">${f.tardy && !isMusicLead() ? `<span class="pill warn">TARDY</span><span>${esc(f.tardy)}</span>` : ""}${f.early ? `<span class="pill warn">LEAVING EARLY</span><span>${esc(f.early)}</span>` : ""}</div>`;
 }
+const tardyLabel = t => { if (!t) return "Tardy"; const n = String(t).match(/\d+/); return n ? `Tardy -${n[0]} mins` : `Tardy - ${t}`; };
 function musFlagControls(k, name){
   if (!isMusicLead()) return "";
   const key = musKey(k, name), f = musFlags()[key] || {};
   if (S.musFlag && S.musFlag.key === key){
     const kind = S.musFlag.kind, label = kind === "tardy" ? "Tardy" : "Leaving Early";
     return `<form class="mus-flag-form" id="musFlagForm" data-key="${esc(key)}" data-kind="${kind}">
-        <label for="mf-text">${label}${kind === "tardy" ? " (how late?)" : " (what time?)"}</label>
-        <input id="mf-text" maxlength="80" value="${esc(f[kind] || "")}" placeholder="${kind === "tardy" ? "e.g. 15 minutes late" : "e.g. leaving at 11:30"}">
+        <label for="mf-text">${label}${kind === "tardy" ? " (minutes late)" : " (what time?)"}</label>
+        <input id="mf-text" maxlength="80" ${kind === "tardy" ? `inputmode="numeric"` : ""} value="${esc(f[kind] || "")}" placeholder="${kind === "tardy" ? "e.g. 20" : "e.g. leaving at 11:30"}">
         <div class="actions"><button class="btn blue" type="submit" id="mf-save">Save</button>${f[kind] ? `<button class="btn decline-soft" type="button" data-act="mus-flag-clear">Clear</button>` : ""}<button class="btn" type="button" data-act="mus-flag-close">Cancel</button></div></form>`;
   }
-  return `<div class="mus-btns"><button type="button" class="btn mus-mark ${f.tardy ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="tardy">⏰ Tardy</button><button type="button" class="btn mus-mark ${f.early ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="early">🚪 Leaving Early</button></div>`;
+  return `<div class="mus-btns"><button type="button" class="btn mus-mark ${f.tardy ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="tardy">⏰ ${esc(tardyLabel(f.tardy))}</button><button type="button" class="btn mus-mark ${f.early ? "on" : ""}" data-act="mus-flag" data-key="${esc(key)}" data-kind="early">🚪 Leaving Early</button></div>`;
 }
 /* Submit an absence for the selected date: musicians for themselves; leads for any tagged musician. */
 /* Cassie and Ashley: confirm/decline a pending singer, or pick one part when two are listed. */
