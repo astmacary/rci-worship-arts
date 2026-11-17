@@ -755,7 +755,7 @@ nav.tabs button[aria-current="page"]{color:var(--accent)}
 <script src="push-config.js"></script>
 <script src="push-client.js"></script>
 <script src="team-switch.js"></script>
-<script src="communications.js?v=125"></script>
+<script src="communications.js?v=126"></script>
 <script src="serve-profile.js?v=2"></script>
 <script>
 /* ============================================================
@@ -802,7 +802,7 @@ const CONFIG = {
 
 const onAppHost = !CONFIG.appHosts || CONFIG.appHosts.some(h => h.startsWith(".") ? location.hostname.endsWith(h) : location.hostname === h);
 // Bump together with CACHE in sw.js whenever the app changes.
-const APP_VERSION = "147";
+const APP_VERSION = "148";
 const DEMO = !CONFIG.clientId || /[?&]demo\b/.test(location.search) || !onAppHost;
 const SCOPES = ["User.Read", "User.ReadBasic.All", "Sites.ReadWrite.All"];
 
@@ -2337,6 +2337,9 @@ function viewAbsence(){
 /* Everyone in the Team Directory, for the admins' "Email All Team Members" button on Messages (communications.js). */
 function teamEmailPeople(){
   return S.items.filter(p => isProfile(p) && !p.gone && lc(p.active) !== "non active").map(p => ({ name: p.fullName || "", email: p.email || p.pendingEmail || "" }));
+}
+function teamPhonePeople(){
+  return S.items.filter(p => isProfile(p) && !p.gone && lc(p.active) !== "non active").map(p => ({ name: p.fullName || "", phone: p.phone || "" }));
 }
 function viewDirectory(){
   const people = S.items.filter(p => isProfile(p) && !p.gone && lc(p.active) !== "non active").sort((a,b) => (a.fullName||"").localeCompare(b.fullName||""));
